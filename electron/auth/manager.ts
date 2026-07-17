@@ -67,9 +67,10 @@ export class AuthManager {
 
       // 尝试从响应体获取 token
       const data = await resp.json().catch(() => ({}))
-      if (data.session || data.token) {
-        this.sessionCookie = data.session || data.token
-        this.store.set(SESSION_KEY, this.sessionCookie)
+      const token = data.session || data.token
+      if (token) {
+        this.sessionCookie = token
+        this.store.set(SESSION_KEY, token)
         return { success: true }
       }
 
