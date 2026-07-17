@@ -44,11 +44,20 @@ export class AuthManager {
 
       loginWindow.loadURL(`${API_BASE}/login`)
 
-      loginWindow.webContents.on('did-navigate', async (_event, url) => {
-        if (url.includes('/console')) {
+      // 使用 did-finish-load 确保页面完全加载
+      loginWindow.webContents.on('did-finish-load', async () => {
+        const url = loginWindow.webContents.getURL()
+        console.log('[Auth] Page loaded:', url)
+
+        if (url.includes('/console') || url.includes('/wallet') || url.includes('/tasks')) {
+          // 登录成功，等待 cookie 写入完成
+          await new Promise((r) => setTimeout(r, 1000))
+
           const cookies = await loginWindow.webContents.session.cookies.get({
             name: SESSION_KEY,
           })
+          console.log('[Auth] Cookies found:', cookies.length)
+
           if (cookies.length > 0) {
             this.sessionCookie = cookies[0].value
             this.store.set(SESSION_KEY, this.sessionCookie)
@@ -56,6 +65,11 @@ export class AuthManager {
             resolve(true)
           }
         }
+      })
+
+      // 同时监听 will-redirect 和 did-navigate 作为备用
+      loginWindow.webContents.on('will-redirect', async (_event, url) => {
+        console.log('[Auth] Redirect to:', url)
       })
 
       loginWindow.on('closed', () => resolve(false))
