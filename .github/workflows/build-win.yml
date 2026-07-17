@@ -24,6 +24,9 @@ jobs:
       - name: Build Vite
         run: npx vite build
 
+      - name: Build Electron TypeScript
+        run: npx tsc -p tsconfig.electron.json
+
       - name: Build Electron (Windows)
         run: npx electron-builder --win --publish never
         env:
