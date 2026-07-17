@@ -34,46 +34,49 @@ export class AuthManager {
     }
   }
 
-  async login(): Promise<boolean> {
-    return new Promise((resolve) => {
-      const loginWindow = new BrowserWindow({
-        width: 500,
-        height: 700,
-        webPreferences: { nodeIntegration: false },
+  async loginWithCredentials(
+    email: string,
+    password: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      // 调用后端登录 API
+      const resp = await fetch(`${API_BASE}/api/v1/users/password-login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
       })
 
-      loginWindow.loadURL(`${API_BASE}/login`)
-
-      // 使用 did-finish-load 确保页面完全加载
-      loginWindow.webContents.on('did-finish-load', async () => {
-        const url = loginWindow.webContents.getURL()
-        console.log('[Auth] Page loaded:', url)
-
-        if (url.includes('/console') || url.includes('/wallet') || url.includes('/tasks')) {
-          // 登录成功，等待 cookie 写入完成
-          await new Promise((r) => setTimeout(r, 1000))
-
-          const cookies = await loginWindow.webContents.session.cookies.get({
-            name: SESSION_KEY,
-          })
-          console.log('[Auth] Cookies found:', cookies.length)
-
-          if (cookies.length > 0) {
-            this.sessionCookie = cookies[0].value
-            this.store.set(SESSION_KEY, this.sessionCookie)
-            loginWindow.close()
-            resolve(true)
-          }
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}))
+        return {
+          success: false,
+          error: data.message || `Login failed: ${resp.status}`,
         }
-      })
+      }
 
-      // 同时监听 will-redirect 和 did-navigate 作为备用
-      loginWindow.webContents.on('will-redirect', async (_event, url) => {
-        console.log('[Auth] Redirect to:', url)
-      })
+      // 从响应中获取 session cookie
+      const setCookieHeader = resp.headers.get('set-cookie')
+      if (setCookieHeader) {
+        const match = setCookieHeader.match(new RegExp(`${SESSION_KEY}=([^;]+)`))
+        if (match) {
+          this.sessionCookie = match[1]
+          this.store.set(SESSION_KEY, this.sessionCookie)
+          return { success: true }
+        }
+      }
 
-      loginWindow.on('closed', () => resolve(false))
-    })
+      // 尝试从响应体获取 token
+      const data = await resp.json().catch(() => ({}))
+      if (data.session || data.token) {
+        this.sessionCookie = data.session || data.token
+        this.store.set(SESSION_KEY, this.sessionCookie)
+        return { success: true }
+      }
+
+      return { success: false, error: 'No session token in response' }
+    } catch (err: any) {
+      return { success: false, error: err.message }
+    }
   }
 
   logout(): void {
