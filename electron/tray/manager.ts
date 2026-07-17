@@ -26,7 +26,7 @@ export class TrayManager {
       },
       {
         label: 'Open MonkeyCode',
-        click: () => shell.openExternal('https://monkeycode.ai/console/tasks'),
+        click: () => shell.openExternal('https://monkeycode-ai.com/console/tasks'),
       },
       { type: 'separator' },
       {

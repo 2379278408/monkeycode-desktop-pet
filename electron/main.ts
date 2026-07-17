@@ -81,7 +81,7 @@ async function main() {
     dataPoller.stop()
   })
   ipcMain.handle('open-external', (_event, url: string) => shell.openExternal(url))
-  ipcMain.handle('wallet:checkin', () => shell.openExternal('https://monkeycode.ai/console/wallet'))
+  ipcMain.handle('wallet:checkin', () => shell.openExternal('https://monkeycode-ai.com/console/wallet'))
 }
 
 app.whenReady().then(main)

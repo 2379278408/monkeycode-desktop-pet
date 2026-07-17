@@ -1,7 +1,7 @@
 import { BrowserWindow } from 'electron'
 import { SecureStore } from '../store/secure-store'
 
-const API_BASE = 'https://monkeycode.ai'
+const API_BASE = 'https://monkeycode-ai.com'
 const SESSION_KEY = 'monkeycode_ai_session'
 
 export class AuthManager {

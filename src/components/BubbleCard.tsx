@@ -62,7 +62,7 @@ export function BubbleCard() {
 
       <div style={{ display: 'flex', gap: 8 }}>
         <button
-          onClick={() => window.electronAPI.openExternal('https://monkeycode.ai')}
+          onClick={() => window.electronAPI.openExternal('https://monkeycode-ai.com')}
           style={{
             flex: 1,
             padding: '8px 0',

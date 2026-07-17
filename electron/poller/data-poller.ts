@@ -1,4 +1,4 @@
-const API_BASE = 'https://monkeycode.ai'
+const API_BASE = 'https://monkeycode-ai.com'
 
 interface Wallet {
   balance: number
