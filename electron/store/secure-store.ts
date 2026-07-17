@@ -1,10 +1,17 @@
 import Store from 'electron-store'
 
+interface StoreSchema {
+  [key: string]: string
+}
+
 export class SecureStore {
-  private store: Store
+  private store: Store<StoreSchema>
 
   constructor(name: string) {
-    this.store = new Store({ projectName: name, encryptionKey: 'monkeycode-pet-key' })
+    this.store = new Store<StoreSchema>({
+      name,
+      encryptionKey: 'monkeycode-pet-key',
+    } as any)
   }
 
   get(key: string): string | null {

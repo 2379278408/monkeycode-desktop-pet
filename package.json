@@ -6,7 +6,8 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p tsconfig.electron.json && vite build && electron-builder --win",
+    "build:electron": "tsup electron/main.ts electron/preload.ts --outDir dist-electron --format cjs --target node20 --clean",
+    "build": "npm run build:electron && vite build && electron-builder --win",
     "test": "vitest"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
     "@vitejs/plugin-react": "^6.0.3",
     "electron": "^41.7.1",
     "electron-builder": "^26.15.3",
+    "tsup": "^8.0.0",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
     "vitest": "^4.1.10"
