@@ -2,13 +2,13 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "CommonJS",
-    "moduleResolution": "node",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "outDir": "dist-electron",
     "rootDir": "electron",
-    "baseUrl": "."
+    "resolveJsonModule": true,
+    "declaration": false
   },
   "include": ["electron/**/*"],
   "exclude": ["electron/**/*.test.ts"]
