@@ -10,10 +10,13 @@ export enum PetState {
 
 export interface Task {
   id: string;
-  status: 'processing' | 'finished' | 'error' | string;
+  title: string;
+  status: 'processing' | 'pending' | 'finished' | 'error' | string;
+  created_at: number;
 }
 
 export interface Wallet {
+  balance: number;
   daily_token_balance: number;
   daily_token_limit: number;
 }
