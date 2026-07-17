@@ -1,4 +1,4 @@
-import { DotLottie } from '@lottiefiles/dotlottie-react';
+import { DotLottieReact as DotLottie } from '@lottiefiles/dotlottie-react';
 import { usePetStore, PetState } from '../stores/pet-store';
 
 const stateAnimations: Record<PetState, string> = {

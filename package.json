@@ -4,7 +4,7 @@
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && electron-builder",
+    "build": "vite build && electron-builder --win",
     "test": "vitest"
   },
   "dependencies": {
