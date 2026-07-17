@@ -1,28 +1,41 @@
-import Store from 'electron-store'
-
-interface StoreSchema {
-  [key: string]: string
-}
+import { app } from 'electron'
+import * as path from 'path'
+import * as fs from 'fs'
 
 export class SecureStore {
-  private store: Store<StoreSchema>
+  private filePath: string
+  private cache: Record<string, unknown> = {}
 
   constructor(name: string) {
-    this.store = new Store<StoreSchema>({
-      name,
-      encryptionKey: 'monkeycode-pet-key',
-    } as any)
+    this.filePath = path.join(app.getPath('userData'), `${name}.json`)
+    try {
+      if (fs.existsSync(this.filePath)) {
+        this.cache = JSON.parse(fs.readFileSync(this.filePath, 'utf-8'))
+      }
+    } catch {
+      this.cache = {}
+    }
   }
 
   get(key: string): string | null {
-    return (this.store.get(key) as string) ?? null
+    return (this.cache[key] as string) ?? null
   }
 
   set(key: string, value: string): void {
-    this.store.set(key, value)
+    this.cache[key] = value
+    this.persist()
   }
 
   delete(key: string): void {
-    this.store.delete(key)
+    delete this.cache[key]
+    this.persist()
+  }
+
+  private persist(): void {
+    try {
+      fs.writeFileSync(this.filePath, JSON.stringify(this.cache, null, 2), 'utf-8')
+    } catch {
+      // ignore write errors
+    }
   }
 }
