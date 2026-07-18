@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="MonkeyCode monkey low on quota">
+  <defs>
+    <linearGradient id="quota-fur" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#76503c"/><stop offset="1" stop-color="#493225"/>
+    </linearGradient>
+    <filter id="quota-shadow" x="-30%" y="-30%" width="170%" height="180%">
+      <feDropShadow dx="0" dy="7" stdDeviation="5" flood-color="#000" flood-opacity=".28"/>
+    </filter>
+  </defs>
+  <ellipse cx="80" cy="145" rx="45" ry="7" fill="#000" opacity=".2"/>
+  <g filter="url(#quota-shadow)">
+    <circle cx="33" cy="76" r="25" fill="url(#quota-fur)"/><circle cx="127" cy="76" r="25" fill="url(#quota-fur)"/>
+    <circle cx="33" cy="76" r="14" fill="#d5a67e"/><circle cx="127" cy="76" r="14" fill="#d5a67e"/>
+    <ellipse cx="80" cy="84" rx="55" ry="61" fill="url(#quota-fur)"/>
+    <path d="M45 76c0-25 16-43 35-43s35 18 35 43c0 7-2 13-5 18 7 6 11 15 11 25 0 20-18 31-41 31s-41-11-41-31c0-10 4-19 11-25-3-5-5-11-5-18z" fill="#dfb58e"/>
+    <ellipse cx="80" cy="117" rx="34" ry="27" fill="#d5a477"/>
+    <path d="M53 68h17M90 68h17" stroke="#493225" stroke-width="5" stroke-linecap="round"/>
+    <path d="M54 77h16M90 77h16" stroke="#21160f" stroke-width="5" stroke-linecap="round"/>
+    <ellipse cx="80" cy="103" rx="6" ry="4" fill="#68402e"/><path d="M68 122h24" stroke="#68402e" stroke-width="5" stroke-linecap="round"/>
+    <path d="M47 44c7-15 19-24 33-26M113 44c-7-15-19-24-33-26" fill="none" stroke="#493225" stroke-width="10" stroke-linecap="round"/>
+    <rect x="50" y="21" width="60" height="19" rx="9.5" fill="#151a27"/>
+    <path d="M59 30h15M86 30h15" stroke="#ef8354" stroke-width="4" stroke-linecap="round" opacity=".7"/>
+    <rect x="107" y="111" width="36" height="20" rx="4" fill="#edf0f4" stroke="#667085" stroke-width="3"/>
+    <path d="M143 117h5v8h-5" fill="#667085"/><rect x="112" y="116" width="7" height="10" rx="2" fill="#d6455d"/>
+  </g>
+</svg>

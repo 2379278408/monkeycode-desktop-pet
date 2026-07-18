@@ -33,8 +33,11 @@ jobs:
       - name: Verify packaged resources
         shell: pwsh
         run: |
-          if (-not (Test-Path "dist/assets/monkey/idle.svg")) {
-            throw "Missing monkey SVG resource"
+          $monkeyStates = @("idle", "working", "success", "error", "quota-low")
+          foreach ($state in $monkeyStates) {
+            if (-not (Test-Path "dist/assets/monkey/$state.svg")) {
+              throw "Missing monkey SVG resource: $state"
+            }
           }
 
       - name: Build Electron (Windows)

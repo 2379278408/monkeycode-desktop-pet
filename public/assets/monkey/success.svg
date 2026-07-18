@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="MonkeyCode monkey celebrating">
+  <defs>
+    <linearGradient id="success-fur" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9a633f"/><stop offset="1" stop-color="#563321"/>
+    </linearGradient>
+    <filter id="success-shadow" x="-30%" y="-30%" width="170%" height="180%">
+      <feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#000" flood-opacity=".25"/>
+    </filter>
+  </defs>
+  <ellipse cx="80" cy="146" rx="42" ry="7" fill="#000" opacity=".13"/>
+  <g filter="url(#success-shadow)">
+    <path d="M21 25l4 9 10 1-8 7 2 10-8-5-9 5 2-10-7-7 10-1z" fill="#ffd84d"/>
+    <path d="M137 28l3 7 8 1-6 5 2 8-7-4-7 4 2-8-6-5 8-1z" fill="#70e1f5"/>
+    <circle cx="33" cy="72" r="25" fill="url(#success-fur)"/><circle cx="127" cy="72" r="25" fill="url(#success-fur)"/>
+    <circle cx="33" cy="72" r="14" fill="#e7b989"/><circle cx="127" cy="72" r="14" fill="#e7b989"/>
+    <ellipse cx="80" cy="80" rx="55" ry="61" fill="url(#success-fur)"/>
+    <path d="M45 72c0-25 16-43 35-43s35 18 35 43c0 7-2 13-5 18 7 6 11 15 11 25 0 20-18 31-41 31s-41-11-41-31c0-10 4-19 11-25-3-5-5-11-5-18z" fill="#f1c99d"/>
+    <ellipse cx="80" cy="113" rx="34" ry="27" fill="#e8b784"/>
+    <path d="M53 73c5-7 13-7 18 0M89 73c5-7 13-7 18 0" fill="none" stroke="#21160f" stroke-width="5" stroke-linecap="round"/>
+    <ellipse cx="80" cy="98" rx="6" ry="4" fill="#6a3d27"/>
+    <path d="M62 112c7 20 29 20 36 0-11 6-25 6-36 0z" fill="#8f3344" stroke="#6a3d27" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M47 40c7-15 19-24 33-26M113 40c-7-15-19-24-33-26" fill="none" stroke="#563321" stroke-width="10" stroke-linecap="round"/>
+    <rect x="50" y="17" width="60" height="19" rx="9.5" fill="#151a27"/>
+    <path d="M58 26l6 5 8-10 7 10M88 26l6 5 8-10" fill="none" stroke="#71e6a6" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M24 102l-10 14M136 101l11 13" stroke="#ffd84d" stroke-width="5" stroke-linecap="round"/>
+  </g>
+</svg>

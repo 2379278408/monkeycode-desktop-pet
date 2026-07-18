@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="MonkeyCode monkey disappointed">
+  <defs>
+    <linearGradient id="error-fur" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#805239"/><stop offset="1" stop-color="#4c3022"/>
+    </linearGradient>
+    <filter id="error-shadow" x="-30%" y="-30%" width="170%" height="180%">
+      <feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#000" flood-opacity=".25"/>
+    </filter>
+  </defs>
+  <ellipse cx="80" cy="146" rx="46" ry="8" fill="#000" opacity=".18"/>
+  <g filter="url(#error-shadow)">
+    <circle cx="33" cy="72" r="25" fill="url(#error-fur)"/><circle cx="127" cy="72" r="25" fill="url(#error-fur)"/>
+    <circle cx="33" cy="72" r="14" fill="#dcae83"/><circle cx="127" cy="72" r="14" fill="#dcae83"/>
+    <ellipse cx="80" cy="80" rx="55" ry="61" fill="url(#error-fur)"/>
+    <path d="M45 72c0-25 16-43 35-43s35 18 35 43c0 7-2 13-5 18 7 6 11 15 11 25 0 20-18 31-41 31s-41-11-41-31c0-10 4-19 11-25-3-5-5-11-5-18z" fill="#e8bf96"/>
+    <ellipse cx="80" cy="113" rx="34" ry="27" fill="#dfaa7d"/>
+    <path d="M52 62l17-5M108 62l-17-5" stroke="#4c3022" stroke-width="5" stroke-linecap="round"/>
+    <path d="M54 75c5 4 11 4 16 0M90 75c5 4 11 4 16 0" fill="none" stroke="#21160f" stroke-width="5" stroke-linecap="round"/>
+    <ellipse cx="80" cy="99" rx="6" ry="4" fill="#6a3d27"/><path d="M65 123c8-10 22-10 30 0" fill="none" stroke="#6a3d27" stroke-width="5" stroke-linecap="round"/>
+    <path d="M47 40c7-15 19-24 33-26M113 40c-7-15-19-24-33-26" fill="none" stroke="#4c3022" stroke-width="10" stroke-linecap="round"/>
+    <rect x="50" y="17" width="60" height="19" rx="9.5" fill="#151a27"/>
+    <path d="M61 22l10 9M71 22l-10 9M89 22l10 9M99 22l-10 9" stroke="#ff6b7c" stroke-width="3.5" stroke-linecap="round"/>
+    <path d="M123 106l20 35h-40z" fill="#ffcf4a" stroke="#8f4d10" stroke-width="3" stroke-linejoin="round"/>
+    <path d="M123 116v11M123 134v1" stroke="#8f4d10" stroke-width="4" stroke-linecap="round"/>
+  </g>
+</svg>

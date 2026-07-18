@@ -325,7 +325,7 @@ git commit -m "feat: 完善桌宠签到与环绕状态卡"
 - Consumes: `PetState.IDLE | WORKING | SUCCESS | ERROR | QUOTA_LOW`。
 - Produces: 每个状态独立 SVG、CSS 动作类和 reduced-motion 静态降级。
 
-- [ ] **Step 1: 添加五种资源映射断言**
+- [x] **Step 1: 添加五种资源映射断言**
 
 扩展 Windows CI 的资源检查，要求五个 SVG 都存在；在 `MonkeySprite.tsx` 导出 `stateAnimations`，并在 `MonkeySprite.test.ts` 断言：
 
@@ -334,13 +334,13 @@ expect(new Set(Object.values(stateAnimations)).size).toBe(5)
 expect(Object.keys(stateAnimations).sort()).toEqual(Object.values(PetState).sort())
 ```
 
-- [ ] **Step 2: 运行资源断言确认失败**
+- [x] **Step 2: 运行资源断言确认失败**
 
 Run: `npx vitest run src/components/MonkeySprite.test.ts`
 
 Expected: FAIL，`stateAnimations` 尚未导出且四个状态仍映射到 `idle.svg`。
 
-- [ ] **Step 3: 创建状态 SVG 和 CSS 动作**
+- [x] **Step 3: 创建状态 SVG 和 CSS 动作**
 
 - `idle.svg`：自然微笑和睁眼。
 - `working.svg`：专注眉眼与代码符号。
@@ -356,13 +356,13 @@ Expected: FAIL，`stateAnimations` 尚未导出且四个状态仍映射到 `idle
 }
 ```
 
-- [ ] **Step 4: 运行完整前端构建和资源检查**
+- [x] **Step 4: 运行完整前端构建和资源检查**
 
 Run: `npm run verify`
 
 Expected: 五种资源映射、45 项现有测试和新增测试通过，Vite 构建包含所有 SVG。
 
-- [ ] **Step 5: 提交状态视觉实现**
+- [x] **Step 5: 提交状态视觉实现**
 
 ```bash
 git add public/assets/monkey src/components/MonkeySprite.tsx src/components/MonkeySprite.test.ts src/styles.css src/main.tsx index.html .github/workflows/build-win.yml

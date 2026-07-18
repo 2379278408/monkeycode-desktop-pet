@@ -5,7 +5,7 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
-import { MonkeySprite } from './MonkeySprite'
+import { MonkeySprite, stateLabels } from './MonkeySprite'
 import { OrbitStatusPanel } from './OrbitStatusPanel'
 import { usePetStore } from '../stores/pet-store'
 import { classifyGesture } from '../lib/pointer-gesture'
@@ -112,6 +112,7 @@ function createPassthroughController(): PassthroughController {
 
 export function PetShell({ onLogout }: PetShellProps) {
   const [showCard, setShowCard] = useState(false)
+  const petState = usePetStore((state) => state.petState)
   const updateFromAPI = usePetStore((s) => s.updateFromAPI)
   const pointerSessionRef = useRef<PointerSession | null>(null)
   const draggingRef = useRef(false)
@@ -329,13 +330,31 @@ export function PetShell({ onLogout }: PetShellProps) {
           border-radius: 32px;
         }
       `}</style>
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        style={{
+          position: 'absolute',
+          width: 1,
+          height: 1,
+          padding: 0,
+          margin: -1,
+          overflow: 'hidden',
+          clip: 'rect(0, 0, 0, 0)',
+          whiteSpace: 'nowrap',
+          border: 0,
+        }}
+      >
+        {stateLabels[petState]}
+      </div>
       {showCard && <OrbitStatusPanel onLogout={onLogout} />}
       <div
         className="pet-monkey-control"
         data-window-interactive
         role="button"
         tabIndex={0}
-        aria-label={showCard ? '收起 MonkeyCode 状态面板' : '展开 MonkeyCode 状态面板'}
+        aria-label={`${stateLabels[petState]}，${showCard ? '收起状态面板' : '展开状态面板'}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

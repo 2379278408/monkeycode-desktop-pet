@@ -1,0 +1,108 @@
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.pet-sprite {
+  position: relative;
+  width: 140px;
+  height: 140px;
+  cursor: pointer;
+}
+
+.pet-sprite img {
+  display: block;
+  width: 140px;
+  height: 140px;
+  pointer-events: none;
+  transform-origin: 50% 92%;
+  will-change: transform;
+}
+
+.pet-idle img {
+  animation: pet-idle-breathe 3.4s ease-in-out infinite;
+}
+
+.pet-working img {
+  animation: pet-working-focus 1.8s ease-in-out infinite;
+}
+
+.pet-working::after {
+  position: absolute;
+  top: 101px;
+  right: 12px;
+  width: 28px;
+  height: 2px;
+  border-radius: 2px;
+  background: #70e1f5;
+  box-shadow: 0 0 6px rgba(112, 225, 245, .9);
+  content: '';
+  pointer-events: none;
+  animation: pet-working-scan 1.8s ease-in-out infinite;
+}
+
+.pet-success img {
+  animation: pet-success-celebrate 1.15s cubic-bezier(.22, .8, .3, 1) 2 forwards;
+}
+
+.pet-error img {
+  animation: pet-error-shake .7s ease-in-out 2 forwards;
+}
+
+.pet-quota-low img {
+  animation: pet-quota-sink 3.8s ease-in-out infinite;
+}
+
+@keyframes pet-idle-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+@keyframes pet-working-focus {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1px); }
+}
+
+@keyframes pet-working-scan {
+  0%, 100% { transform: translateY(0); opacity: .35; }
+  50% { transform: translateY(14px); opacity: 1; }
+}
+
+@keyframes pet-success-celebrate {
+  0%, 100% { transform: translateY(0) scale(1); }
+  32% { transform: translateY(-7px) scale(1.025); }
+  58% { transform: translateY(0) scale(.98, 1.02); }
+  72% { transform: translateY(-4px) scale(1.01); }
+}
+
+@keyframes pet-error-shake {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  22% { transform: translateX(-2px) rotate(-1deg); }
+  44% { transform: translateX(2px) rotate(1deg); }
+  66% { transform: translateX(-1px) rotate(-.5deg); }
+  82% { transform: translateX(1px) rotate(.5deg); }
+}
+
+@keyframes pet-quota-sink {
+  0%, 100% { transform: translateY(1px) scale(.98); opacity: .96; }
+  50% { transform: translateY(3px) scale(.96); opacity: .86; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-sprite,
+  .pet-sprite img,
+  .pet-sprite::after {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+
+  .pet-sprite::after {
+    display: none;
+  }
+}

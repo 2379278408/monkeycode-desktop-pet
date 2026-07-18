@@ -1,5 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="MonkeyCode monkey">
   <defs>
+    <style>
+      .blink { animation: blink 7.2s ease-in-out infinite; transform-origin: center; }
+      @keyframes blink { 0%, 46%, 50%, 100% { transform: scaleY(0); } 48% { transform: scaleY(1); } }
+      @media (prefers-reduced-motion: reduce) { .blink { animation: none; transform: scaleY(0); } }
+    </style>
     <linearGradient id="fur" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#8b5a3c"/>
       <stop offset="1" stop-color="#563321"/>
@@ -21,6 +26,7 @@
     <ellipse cx="98" cy="73" rx="7" ry="9" fill="#21160f"/>
     <circle cx="60" cy="70" r="2" fill="#fff"/>
     <circle cx="96" cy="70" r="2" fill="#fff"/>
+    <path class="blink" d="M53 73h18M89 73h18" stroke="#e7b989" stroke-width="12" stroke-linecap="round"/>
     <ellipse cx="80" cy="99" rx="6" ry="4" fill="#6a3d27"/>
     <path d="M65 115c8 10 22 10 30 0" fill="none" stroke="#6a3d27" stroke-width="5" stroke-linecap="round"/>
     <path d="M47 40c7-15 19-24 33-26M113 40c-7-15-19-24-33-26" fill="none" stroke="#563321" stroke-width="10" stroke-linecap="round"/>
