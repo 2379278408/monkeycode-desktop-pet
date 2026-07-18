@@ -1,16 +1,17 @@
 {
   "name": "monkeycode-desktop-pet",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "MonkeyCode Windows Desktop Pet - Monitor task status and quota",
   "author": "MonkeyCode",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
-    "build:electron": "tsup electron/main.ts electron/preload.ts --outDir dist-electron --format cjs --target node20 --clean",
-    "build": "npm run build:electron && vite build && electron-builder --win",
+    "build:electron": "tsup electron/main.ts electron/preload.ts --outDir dist-electron --format cjs --target node20 --external electron --clean",
+    "verify:bundle": "node scripts/verify-electron-bundle.mjs",
+    "build": "npm run build:electron && npm run verify:bundle && vite build && electron-builder --win",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "verify": "npm run typecheck && npm test && npm run build:electron && vite build"
+    "verify": "npm run typecheck && npm test && npm run build:electron && npm run verify:bundle && vite build"
   },
   "dependencies": {
     "@lottiefiles/dotlottie-react": "^0.19.10",
