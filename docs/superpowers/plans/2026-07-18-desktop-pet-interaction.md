@@ -204,7 +204,7 @@ git commit -m "feat: 增加桌宠瞬时任务状态"
 - Produces: `window.electronAPI.beginDrag(x, y)`、`moveDrag(x, y)`、`endDrag()`、`setMousePassthrough(enabled)`、`setWindowMode(mode)`。
 - Produces: `WindowMode = 'auth' | 'collapsed' | 'expanded'`。
 
-- [ ] **Step 1: 添加拖动阈值和窗口边界失败测试**
+- [x] **Step 1: 添加拖动阈值和窗口边界失败测试**
 
 创建纯函数测试：
 
@@ -219,13 +219,13 @@ expect(clampWindowPosition({ x: 1900, y: 1060 }, { width: 180, height: 190 }, {
 
 覆盖负坐标多显示器和展开窗口锚点保持。
 
-- [ ] **Step 2: 运行交互测试确认失败**
+- [x] **Step 2: 运行交互测试确认失败**
 
 Run: `npx vitest run electron/window/interaction.test.ts src/lib/pointer-gesture.test.ts`
 
 Expected: FAIL，交互辅助函数尚未定义。
 
-- [ ] **Step 3: 实现纯交互函数与受信 IPC**
+- [x] **Step 3: 实现纯交互函数与受信 IPC**
 
 在主进程实现三种窗口尺寸：`auth 380x430`、`collapsed 180x190`、`expanded 380x430`。拖动开始时记录指针与窗口起点，移动时计算偏移并按当前 display workArea 限制位置。模式切换以猴子屏幕锚点为基准调整 bounds。
 
@@ -237,17 +237,17 @@ petWindow.setIgnoreMouseEvents(true, { forward: true })
 
 所有 IPC 均复用受信 Renderer 校验，并拒绝非有限坐标、未知模式和已销毁窗口。
 
-- [ ] **Step 4: 在 PetShell 接入指针手势和命中上报**
+- [x] **Step 4: 在 PetShell 接入指针手势和命中上报**
 
 猴子容器标记 `data-window-interactive`。`pointerdown` 记录起点并捕获指针；`pointermove` 达到 5 像素后发送拖动；`pointerup` 根据分类执行结束拖动或切换面板。窗口级 `mousemove` 使用 `document.elementFromPoint()` 检查 `[data-window-interactive]`，仅在命中状态变化时发送穿透 IPC。
 
-- [ ] **Step 5: 运行交互测试确认通过**
+- [x] **Step 5: 运行交互测试确认通过**
 
 Run: `npx vitest run electron/window/interaction.test.ts src/lib/pointer-gesture.test.ts`
 
 Expected: PASS，拖动阈值、工作区限制和窗口锚点测试通过。
 
-- [ ] **Step 6: 提交窗口交互实现**
+- [x] **Step 6: 提交窗口交互实现**
 
 ```bash
 git add electron/window electron/main.ts electron/preload.ts src/types/electron.d.ts src/lib src/components/PetShell.tsx src/App.tsx
