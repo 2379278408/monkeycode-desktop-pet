@@ -15,6 +15,7 @@ import {
   type PointerIntent,
 } from '../lib/pointer-gesture'
 import { createDragController, type DragController } from '../lib/drag-controller'
+import { selectPetAction } from '../lib/pet-action'
 
 interface PetShellProps {
   onLogout: () => Promise<void>
@@ -88,6 +89,12 @@ export function PetShell({ onLogout }: PetShellProps) {
   const [showCard, setShowCard] = useState(false)
   const petState = usePetStore((state) => state.petState)
   const updateFromAPI = usePetStore((s) => s.updateFromAPI)
+  const petAction = selectPetAction({
+    interaction: null,
+    lifeAction: null,
+    business: petState,
+    form: 'normal',
+  })
   const pointerSessionRef = useRef<PointerSession | null>(null)
   const latestPointerScreenPositionRef = useRef<ScreenPoint | null>(null)
   const previousClickAtRef = useRef<number | null>(null)
@@ -473,7 +480,7 @@ export function PetShell({ onLogout }: PetShellProps) {
           transform: 'translateX(-50%)',
         }}
       >
-        <MonkeySprite />
+        <MonkeySprite action={petAction} />
       </div>
     </div>
   )

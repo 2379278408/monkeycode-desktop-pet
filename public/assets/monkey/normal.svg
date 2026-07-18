@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="MonkeyCode monkey normal">
+  <defs><linearGradient id="fur" x1="36" y1="28" x2="124" y2="142" gradientUnits="userSpaceOnUse"><stop stop-color="#8b5a3c"/><stop offset="1" stop-color="#563321"/></linearGradient></defs>
+  <ellipse cx="80" cy="128" rx="39" ry="24" fill="url(#fur)"/>
+  <circle cx="38" cy="68" r="18" fill="url(#fur)"/><circle cx="122" cy="68" r="18" fill="url(#fur)"/>
+  <circle cx="38" cy="68" r="10" fill="#e8b784"/><circle cx="122" cy="68" r="10" fill="#e8b784"/>
+  <circle cx="80" cy="74" r="48" fill="url(#fur)"/>
+  <path d="M42 54Q80 37 118 54L114 67Q80 55 46 67Z" fill="#151a27"/>
+  <path d="M53 57Q80 48 107 57" fill="none" stroke="#70e1f5" stroke-width="5" stroke-linecap="round"/>
+  <ellipse cx="80" cy="86" rx="31" ry="27" fill="#f1c99d"/>
+  <circle cx="66" cy="76" r="4" fill="#151a27"/><circle cx="94" cy="76" r="4" fill="#151a27"/>
+  <ellipse cx="80" cy="87" rx="5" ry="4" fill="#563321"/><path d="M70 98Q80 104 90 98" fill="none" stroke="#563321" stroke-width="4" stroke-linecap="round"/>
+  <path d="M53 124Q42 132 47 143M107 124Q118 132 113 143" fill="none" stroke="#563321" stroke-width="9" stroke-linecap="round"/>
+</svg>

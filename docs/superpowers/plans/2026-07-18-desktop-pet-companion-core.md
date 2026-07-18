@@ -627,6 +627,8 @@ git commit -m "feat: 编排桌宠生命状态与互动动作"
 - Create: `public/assets/monkey/eating.svg`
 - Modify: `src/components/MonkeySprite.tsx`
 - Modify: `src/components/MonkeySprite.test.ts`
+- Modify: `src/components/PetShell.tsx`
+- Create: `src/components/PetShell.test.ts`
 - Modify: `src/styles.css`
 - Modify: `.github/workflows/build-win.yml`
 
@@ -634,7 +636,7 @@ git commit -m "feat: 编排桌宠生命状态与互动动作"
 - Consumes: `PetAction`。
 - Produces: `actionAnimations: Record<PetAction, string>` 和每个动作的可访问标签。
 
-- [ ] **Step 1: 扩展资源映射失败测试**
+- [x] **Step 1: 扩展资源映射失败测试**
 
 在 `MonkeySprite.test.ts` 断言：
 
@@ -651,19 +653,19 @@ for (const filename of required) {
 
 同时断言每个 `PetAction` 都有唯一资源或明确复用的临时动作映射，并包含中文状态标签。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run src/components/MonkeySprite.test.ts`
 
 Expected: FAIL，提示新资源或映射缺失。
 
-- [ ] **Step 3: 创建 SVG 和动作样式**
+- [x] **Step 3: 创建 SVG 和动作样式**
 
-所有 SVG 使用现有 `viewBox="0 0 140 140"`、配色和线条体系。形态差异：开心闭眼上扬嘴；委屈下垂眉眼；饥饿持空碗；困倦半闭眼；睡眠闭眼和 `Z`；抚摸闭眼轻摆；拖动双手上举；喂食持食物。CSS 动画只作用于 140×140 容器内部视觉层。
+所有 SVG 使用现有 `viewBox="0 0 160 160"`、配色和线条体系，组件以 140×140 显示。形态差异：开心闭眼上扬嘴；委屈下垂眉眼；饥饿持空碗；困倦半闭眼；睡眠闭眼和 `Z`；抚摸闭眼轻摆；拖动双手上举；喂食持食物。CSS 动画只作用于 140×140 容器内部视觉层。
 
 在 `prefers-reduced-motion` 中关闭新增 wrapper、img 和伪元素动画，保留静态姿态。
 
-- [ ] **Step 4: 接入 MonkeySprite**
+- [x] **Step 4: 接入 MonkeySprite**
 
 将组件签名改为：
 
@@ -673,7 +675,7 @@ export function MonkeySprite({ action }: { action: PetAction })
 
 根据 `actionAnimations[action]` 渲染资源和动作类；图片保持 `aria-hidden`，外部 live region 继续播报状态。
 
-- [ ] **Step 5: 扩展 Windows 资源检查并验证**
+- [x] **Step 5: 扩展 Windows 资源检查并验证**
 
 在 `.github/workflows/build-win.yml` 的资源检查列表加入十个新 SVG。
 
@@ -681,10 +683,10 @@ Run: `npx vitest run src/components/MonkeySprite.test.ts && npm run verify`
 
 Expected: 资源测试、118+ 全量测试和构建通过，`dist/assets/monkey/` 包含新资源。
 
-- [ ] **Step 6: 提交视觉资源**
+- [x] **Step 6: 提交视觉资源**
 
 ```bash
-git add public/assets/monkey src/components/MonkeySprite.tsx src/components/MonkeySprite.test.ts src/styles.css .github/workflows/build-win.yml
+git add public/assets/monkey src/components/MonkeySprite.tsx src/components/MonkeySprite.test.ts src/components/PetShell.tsx src/components/PetShell.test.ts src/styles.css .github/workflows/build-win.yml
 git commit -m "feat: 增加桌宠陪伴形态与互动动作"
 ```
 

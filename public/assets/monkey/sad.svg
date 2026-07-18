@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="MonkeyCode monkey sad">
+  <defs><linearGradient id="fur" x1="34" y1="29" x2="126" y2="146" gradientUnits="userSpaceOnUse"><stop stop-color="#8b5a3c"/><stop offset="1" stop-color="#563321"/></linearGradient></defs>
+  <ellipse cx="80" cy="130" rx="38" ry="22" fill="url(#fur)"/>
+  <circle cx="38" cy="70" r="18" fill="url(#fur)"/><circle cx="122" cy="70" r="18" fill="url(#fur)"/>
+  <circle cx="38" cy="70" r="10" fill="#e8b784"/><circle cx="122" cy="70" r="10" fill="#e8b784"/>
+  <circle cx="80" cy="76" r="48" fill="url(#fur)"/>
+  <path d="M42 56Q80 39 118 56L114 69Q80 57 46 69Z" fill="#151a27"/>
+  <path d="M53 59Q80 50 107 59" fill="none" stroke="#70e1f5" stroke-width="5" stroke-linecap="round"/>
+  <ellipse cx="80" cy="89" rx="31" ry="27" fill="#f1c99d"/>
+  <path d="M58 76L72 81M102 76L88 81" fill="none" stroke="#563321" stroke-width="4" stroke-linecap="round"/>
+  <ellipse cx="66" cy="85" rx="4" ry="5" fill="#151a27"/><ellipse cx="94" cy="85" rx="4" ry="5" fill="#151a27"/>
+  <path d="M64 92Q66 98 68 92" fill="#70e1f5" opacity=".8"/>
+  <ellipse cx="80" cy="96" rx="5" ry="4" fill="#563321"/><path d="M69 110Q80 101 91 110" fill="none" stroke="#563321" stroke-width="4" stroke-linecap="round"/>
+  <path d="M52 127Q42 137 47 146M108 127Q118 137 113 146" fill="none" stroke="#563321" stroke-width="9" stroke-linecap="round"/>
+</svg>

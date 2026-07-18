@@ -21,7 +21,62 @@ body {
   height: 140px;
   pointer-events: none;
   transform-origin: 50% 92%;
-  will-change: transform;
+}
+
+.pet-sprite img[data-sprite-fallback-applied='true'] {
+  animation: none !important;
+  transform: none !important;
+  opacity: 1 !important;
+}
+
+.pet-normal img {
+  animation: pet-normal-breathe 3.4s ease-in-out infinite;
+}
+
+.pet-happy img {
+  animation: pet-happy-bounce 1.8s ease-in-out infinite;
+}
+
+.pet-sad img {
+  animation: pet-sad-droop 3.2s ease-in-out infinite;
+}
+
+.pet-hungry img {
+  animation: pet-hungry-bowl .9s ease-in-out infinite;
+}
+
+.pet-sleepy img,
+.pet-falling-asleep img {
+  animation: pet-sleepy-sink 3.8s ease-in-out infinite;
+}
+
+.pet-sleeping img {
+  animation: pet-sleeping-breathe 4.6s ease-in-out infinite;
+}
+
+.pet-waving img {
+  animation: pet-waving-sway .36s ease-in-out 4 alternate;
+}
+
+.pet-celebrating img,
+.pet-waking img {
+  animation: pet-happy-bounce .42s ease-out 3;
+}
+
+.pet-petting img {
+  animation: pet-petting-sway .4s ease-in-out 4 alternate;
+}
+
+.pet-dragging img {
+  animation: pet-dragging-lift .3s ease-in-out infinite alternate;
+}
+
+.pet-dropping img {
+  animation: pet-dropping-settle .36s ease-out 1;
+}
+
+.pet-eating img {
+  animation: pet-eating-chew .32s ease-in-out infinite alternate;
 }
 
 .pet-idle img {
@@ -47,14 +102,17 @@ body {
 }
 
 .pet-success img {
+  transform: scale(.85);
   animation: pet-success-celebrate 1.15s cubic-bezier(.22, .8, .3, 1) 2 forwards;
 }
 
 .pet-error img {
+  transform: scale(.85);
   animation: pet-error-shake .7s ease-in-out 2 forwards;
 }
 
 .pet-quota-low img {
+  transform: scale(.85);
   animation: pet-quota-sink 3.8s ease-in-out infinite;
 }
 
@@ -74,23 +132,79 @@ body {
 }
 
 @keyframes pet-success-celebrate {
-  0%, 100% { transform: translateY(0) scale(1); }
-  32% { transform: translateY(-7px) scale(1.025); }
-  58% { transform: translateY(0) scale(.98, 1.02); }
-  72% { transform: translateY(-4px) scale(1.01); }
+  0%, 100% { transform: translateY(0) scale(.85); }
+  32% { transform: translateY(-7px) scale(.87); }
+  58% { transform: translateY(0) scale(.83, .87); }
+  72% { transform: translateY(-4px) scale(.86); }
 }
 
 @keyframes pet-error-shake {
-  0%, 100% { transform: translateX(0) rotate(0); }
-  22% { transform: translateX(-2px) rotate(-1deg); }
-  44% { transform: translateX(2px) rotate(1deg); }
-  66% { transform: translateX(-1px) rotate(-.5deg); }
-  82% { transform: translateX(1px) rotate(.5deg); }
+  0%, 100% { transform: translateX(0) rotate(0) scale(.85); }
+  22% { transform: translateX(-2px) rotate(-1deg) scale(.85); }
+  44% { transform: translateX(2px) rotate(1deg) scale(.85); }
+  66% { transform: translateX(-1px) rotate(-.5deg) scale(.85); }
+  82% { transform: translateX(1px) rotate(.5deg) scale(.85); }
 }
 
 @keyframes pet-quota-sink {
-  0%, 100% { transform: translateY(1px) scale(.98); opacity: .96; }
-  50% { transform: translateY(3px) scale(.96); opacity: .86; }
+  0%, 100% { transform: translateY(1px) scale(.85); opacity: .96; }
+  50% { transform: translateY(3px) scale(.84); opacity: .86; }
+}
+
+@keyframes pet-normal-breathe {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-2px) scale(1.01); }
+}
+
+@keyframes pet-happy-bounce {
+  0%, 100% { transform: translateY(0) scale(1); }
+  45% { transform: translateY(-5px) scale(1.02); }
+}
+
+@keyframes pet-sad-droop {
+  0%, 100% { transform: translateY(2px) rotate(0); }
+  50% { transform: translateY(4px) rotate(-1deg); }
+}
+
+@keyframes pet-hungry-bowl {
+  0%, 100% { transform: rotate(-1deg); }
+  50% { transform: rotate(1deg); }
+}
+
+@keyframes pet-sleepy-sink {
+  0%, 100% { transform: translateY(1px); opacity: 1; }
+  50% { transform: translateY(4px); opacity: .9; }
+}
+
+@keyframes pet-sleeping-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.015, .985); }
+}
+
+@keyframes pet-waving-sway {
+  from { transform: rotate(-2deg); }
+  to { transform: rotate(2deg); }
+}
+
+@keyframes pet-petting-sway {
+  from { transform: translateX(-1px) rotate(-1deg); }
+  to { transform: translateX(1px) rotate(1deg); }
+}
+
+@keyframes pet-dragging-lift {
+  from { transform: translateY(0); }
+  to { transform: translateY(-3px); }
+}
+
+@keyframes pet-dropping-settle {
+  0% { transform: translateY(-5px) scale(.98); }
+  70% { transform: translateY(1px) scale(1.01, .99); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+@keyframes pet-eating-chew {
+  from { transform: scale(1); }
+  to { transform: scale(1.015, .985); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -104,5 +218,11 @@ body {
 
   .pet-sprite::after {
     display: none;
+  }
+
+  .pet-success img,
+  .pet-error img,
+  .pet-quota-low img {
+    transform: scale(.85) !important;
   }
 }
