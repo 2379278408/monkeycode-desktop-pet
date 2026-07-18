@@ -213,6 +213,7 @@ describe('DataPoller', () => {
     await poller.refreshTasks()
     expect(updates.some((state) => state.task_event)).toBe(false)
 
+    await vi.advanceTimersByTimeAsync(15_000)
     await poller.refreshTasks()
     expect(detailRequestCount).toBe(2)
     expect(updates.flatMap((state) => state.task_event ? [state.task_event.status] : [])).toEqual(['finished'])
@@ -240,6 +241,7 @@ describe('DataPoller', () => {
 
     await poller.refreshTasks()
     await poller.refreshTasks()
+    await vi.advanceTimersByTimeAsync(15_000)
     await poller.refreshTasks()
 
     expect(detailRequestCount).toBe(2)
@@ -311,6 +313,115 @@ describe('DataPoller', () => {
     for (const id of newIds) {
       expect(api.request).toHaveBeenCalledWith(`/api/v1/users/tasks/${id}`)
     }
+  })
+
+  it('bounds pending confirmations while active tasks continuously rotate', async () => {
+    const batches = Array.from({ length: 6 }, (_, batchIndex) =>
+      Array.from({ length: 3 }, (_, taskIndex) => `batch${batchIndex}-task${taskIndex}`))
+    let activeRequestCount = 0
+    const detailCounts = new Map<string, number>()
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/tasks?status=processing,pending') {
+        const batch = batches[Math.min(activeRequestCount, batches.length - 1)]
+        activeRequestCount += 1
+        return Promise.resolve({ tasks: batch.map((id) => ({ id, status: 'processing' })) })
+      }
+      if (path.startsWith('/api/v1/users/tasks/')) {
+        const taskId = decodeURIComponent(path.slice('/api/v1/users/tasks/'.length))
+        detailCounts.set(taskId, (detailCounts.get(taskId) ?? 0) + 1)
+        return Promise.reject(new Error('detail unavailable'))
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+    const detailRequestCount = (): number => [...detailCounts.values()]
+      .reduce((total, count) => total + count, 0)
+
+    await poller.refreshTasks()
+    for (let round = 1; round < batches.length; round += 1) {
+      const before = detailRequestCount()
+      await poller.refreshTasks()
+      expect(detailRequestCount() - before).toBeLessThanOrEqual(3)
+    }
+
+    await vi.advanceTimersByTimeAsync(15_000)
+    for (let round = 0; round < 4; round += 1) {
+      const before = detailRequestCount()
+      await poller.refreshTasks()
+      expect(detailRequestCount() - before).toBeLessThanOrEqual(3)
+    }
+
+    for (const taskId of batches[0]) expect(detailCounts.get(taskId)).toBe(1)
+    for (const batch of batches.slice(1, 5)) {
+      for (const taskId of batch) expect(detailCounts.get(taskId)).toBe(2)
+    }
+  })
+
+  it('backs off failed confirmations and stops after five attempts', async () => {
+    let activeRequestCount = 0
+    let detailRequestCount = 0
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/tasks?status=processing,pending') {
+        activeRequestCount += 1
+        return Promise.resolve(activeRequestCount === 1
+          ? { tasks: [{ id: 't1', status: 'processing' }] }
+          : { tasks: [] })
+      }
+      if (path === '/api/v1/users/tasks/t1') {
+        detailRequestCount += 1
+        return Promise.reject(new Error('detail unavailable'))
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    await poller.refreshTasks()
+    await poller.refreshTasks()
+    await poller.refreshTasks()
+    expect(detailRequestCount).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(14_999)
+    await poller.refreshTasks()
+    expect(detailRequestCount).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(1)
+    await poller.refreshTasks()
+    for (const delay of [30_000, 60_000, 120_000]) {
+      await vi.advanceTimersByTimeAsync(delay)
+      await poller.refreshTasks()
+    }
+    expect(detailRequestCount).toBe(5)
+
+    await vi.advanceTimersByTimeAsync(240_000)
+    await poller.refreshTasks()
+    expect(detailRequestCount).toBe(5)
+  })
+
+  it('expires pending confirmations after ten minutes', async () => {
+    poller.stop()
+    poller = new DataPoller(api, { taskIntervalMs: 300_000, walletIntervalMs: 300_000 })
+    let activeRequestCount = 0
+    let detailRequestCount = 0
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/tasks?status=processing,pending') {
+        activeRequestCount += 1
+        return Promise.resolve(activeRequestCount === 1
+          ? { tasks: [{ id: 't1', status: 'processing' }] }
+          : { tasks: [] })
+      }
+      if (path === '/api/v1/users/tasks/t1') {
+        detailRequestCount += 1
+        return Promise.reject(new Error('detail unavailable'))
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    await poller.refreshTasks()
+    await poller.refreshTasks()
+    await vi.advanceTimersByTimeAsync(300_000)
+    await poller.refreshTasks()
+    await vi.advanceTimersByTimeAsync(300_000)
+    await poller.refreshTasks()
+
+    expect(detailRequestCount).toBe(2)
   })
 
   it('refreshes tasks every 15 seconds and wallet every five minutes', async () => {

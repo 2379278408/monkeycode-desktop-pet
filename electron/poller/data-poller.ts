@@ -38,10 +38,21 @@ interface RefreshQueue {
   resolve: () => void
 }
 
+interface PendingTerminalTask {
+  task: ProjectTask
+  attempts: number
+  nextRetryAt: number
+  createdAt: number
+  expiresAt: number
+}
+
 type Settled<T> = { value: T; error?: never } | { value?: never; error: unknown }
 
 const ACTIVE_TASK_PATH = '/api/v1/users/tasks?status=processing,pending'
 const MAX_TRACKED_TASKS = 3
+const MAX_PENDING_TERMINAL_TASKS = 12
+const MAX_TERMINAL_ATTEMPTS = 5
+const TERMINAL_TASK_TTL_MS = 10 * 60_000
 
 function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
   return promise.then(
@@ -73,7 +84,7 @@ export class DataPoller {
   private refreshQueue: RefreshQueue | null = null
   private hasTaskBaseline = false
   private activeTasks = new Map<string, ProjectTask>()
-  private pendingTerminalTasks = new Map<string, ProjectTask>()
+  private pendingTerminalTasks = new Map<string, PendingTerminalTask>()
   private checkinCacheGeneration: number | null = null
   private checkinCacheDate: string | null = null
   private checkinMutationVersion = 0
@@ -333,30 +344,51 @@ export class DataPoller {
       return { tasks, events: [], errors: [] }
     }
 
+    const now = Date.now()
     const pendingTasks = new Map(this.pendingTerminalTasks)
+    this.prunePendingTasks(pendingTasks, now)
     for (const task of this.activeTasks.values()) {
-      if (!currentActiveTasks.has(task.id)) pendingTasks.set(task.id, task)
+      if (!currentActiveTasks.has(task.id) && !pendingTasks.has(task.id)) {
+        pendingTasks.set(task.id, {
+          task,
+          attempts: 0,
+          nextRetryAt: now,
+          createdAt: now,
+          expiresAt: now + TERMINAL_TASK_TTL_MS,
+        })
+      }
     }
     for (const taskId of currentActiveTasks.keys()) pendingTasks.delete(taskId)
+    this.limitPendingTasks(pendingTasks)
 
-    const detailResults = await Promise.all([...pendingTasks.values()].map(async (task) => ({
-      task,
+    const duePendingTasks = [...pendingTasks.values()]
+      .filter((pending) => pending.nextRetryAt <= now)
+      .slice(0, MAX_TRACKED_TASKS)
+    const detailResults = await Promise.all(duePendingTasks.map(async (pending) => ({
+      pending,
       result: await settle(this.api.request<ProjectTask>(
-        `/api/v1/users/tasks/${encodeURIComponent(task.id)}`,
+        `/api/v1/users/tasks/${encodeURIComponent(pending.task.id)}`,
       )),
     })))
     if (generation !== this.generation) return { tasks, events: [], errors: [] }
 
+    const resultTime = Date.now()
     const events: TaskTerminalEvent[] = []
     const errors: unknown[] = []
-    const retainedTasks: ProjectTask[] = []
-    for (const { task, result } of detailResults) {
+    for (const { pending, result } of detailResults) {
+      const { task } = pending
+      if (resultTime >= pending.expiresAt) {
+        if ('error' in result) errors.push(result.error)
+        pendingTasks.delete(task.id)
+        continue
+      }
       if ('error' in result) {
         errors.push(result.error)
-        retainedTasks.push(task)
+        this.schedulePendingRetry(pendingTasks, pending, task, resultTime)
         continue
       }
       if (result.value.status === 'finished' || result.value.status === 'error') {
+        pendingTasks.delete(task.id)
         events.push({
           task_id: task.id,
           title: result.value.title ?? task.title,
@@ -364,17 +396,52 @@ export class DataPoller {
           occurred_at: Date.now(),
         })
       } else {
-        retainedTasks.push({ ...task, ...result.value })
+        this.schedulePendingRetry(pendingTasks, pending, { ...task, ...result.value }, resultTime)
       }
     }
 
-    const retainedPendingTasks = new Map<string, ProjectTask>()
-    for (const task of retainedTasks) {
-      retainedPendingTasks.set(task.id, task)
-    }
     this.activeTasks = currentActiveTasks
-    this.pendingTerminalTasks = retainedPendingTasks
+    this.pendingTerminalTasks = pendingTasks
     return { tasks, events, errors }
+  }
+
+  private schedulePendingRetry(
+    pendingTasks: Map<string, PendingTerminalTask>,
+    pending: PendingTerminalTask,
+    task: ProjectTask,
+    now: number,
+  ): void {
+    const attempts = pending.attempts + 1
+    if (attempts >= MAX_TERMINAL_ATTEMPTS || now >= pending.expiresAt) {
+      pendingTasks.delete(task.id)
+      return
+    }
+    pendingTasks.set(task.id, {
+      ...pending,
+      task,
+      attempts,
+      nextRetryAt: now + this.taskIntervalMs * (2 ** (attempts - 1)),
+    })
+  }
+
+  private prunePendingTasks(
+    pendingTasks: Map<string, PendingTerminalTask>,
+    now: number,
+  ): void {
+    for (const [taskId, pending] of pendingTasks) {
+      if (pending.attempts >= MAX_TERMINAL_ATTEMPTS || now >= pending.expiresAt) {
+        pendingTasks.delete(taskId)
+      }
+    }
+  }
+
+  private limitPendingTasks(pendingTasks: Map<string, PendingTerminalTask>): void {
+    if (pendingTasks.size <= MAX_PENDING_TERMINAL_TASKS) return
+    const oldest = [...pendingTasks.entries()]
+      .sort(([, left], [, right]) => left.createdAt - right.createdAt)
+    for (const [taskId] of oldest.slice(0, pendingTasks.size - MAX_PENDING_TERMINAL_TASKS)) {
+      pendingTasks.delete(taskId)
+    }
   }
 
   private expireAuthIfNeeded(errors: unknown[]): boolean {
