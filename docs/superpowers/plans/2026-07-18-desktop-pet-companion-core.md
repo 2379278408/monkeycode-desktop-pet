@@ -320,7 +320,7 @@ git commit -m "feat: 增加桌宠生命状态模型"
 - Consumes: `PetLifeSnapshot` JSON 数据。
 - Produces: `PetLifeStore.load(): PetLifeSnapshot | null`、`PetLifeStore.save(snapshot): void`；Renderer API `loadPetLife()` 和 `savePetLife(snapshot)`。
 
-- [ ] **Step 1: 添加快照校验失败测试**
+- [x] **Step 1: 添加快照校验失败测试**
 
 创建 `electron/pet-life/store.test.ts`，使用临时目录和注入路径：
 
@@ -346,13 +346,13 @@ describe('normalizePetLifeSnapshot', () => {
 })
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run electron/pet-life/store.test.ts`
 
 Expected: FAIL，提示模块不存在。
 
-- [ ] **Step 3: 实现原子 JSON 存储**
+- [x] **Step 3: 实现原子 JSON 存储**
 
 创建 `electron/pet-life/store.ts`，导出校验函数和存储类：
 
@@ -399,16 +399,16 @@ export class PetLifeStore {
     const normalized = normalizePetLifeSnapshot(snapshot)
     if (!normalized) throw new Error('无效桌宠生命状态')
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true })
-    const temporaryPath = `${this.filePath}.tmp`
+    const temporaryPath = `${this.filePath}.${process.pid}.tmp`
     fs.writeFileSync(temporaryPath, JSON.stringify(normalized, null, 2), 'utf8')
     fs.renameSync(temporaryPath, this.filePath)
   }
 }
 ```
 
-`normalizePetLifeSnapshot` 必须要求六个字段类型正确、数值有限，并将三项生命值限制到 0 至 100。
+`normalizePetLifeSnapshot` 必须要求六个字段类型正确、数值有限，并将三项生命值限制到 0 至 100。时间戳要求为安全整数，负值归零。读取前限制快照文件大小为 16 KiB，临时文件名包含进程 ID 以隔离多实例写入。
 
-- [ ] **Step 4: 注册受限 IPC**
+- [x] **Step 4: 注册受限 IPC**
 
 在 `electron/main.ts` 初始化：
 
@@ -423,13 +423,13 @@ loadPetLife: () => Promise<PetLifeSnapshot | null>
 savePetLife: (snapshot: PetLifeSnapshot) => Promise<void>
 ```
 
-- [ ] **Step 5: 运行存储和全量验证**
+- [x] **Step 5: 运行存储和全量验证**
 
 Run: `npx vitest run electron/pet-life/store.test.ts && npm run verify`
 
 Expected: 存储测试和全量验证通过。
 
-- [ ] **Step 6: 提交持久化实现**
+- [x] **Step 6: 提交持久化实现**
 
 ```bash
 git add electron/pet-life/store.ts electron/pet-life/store.test.ts electron/main.ts electron/preload.ts src/types/electron.d.ts

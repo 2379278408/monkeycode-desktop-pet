@@ -29,6 +29,15 @@ export interface StateUpdate {
 
 export type WindowMode = 'auth' | 'collapsed' | 'expanded'
 
+export interface PetLifeSnapshot {
+  mood: number
+  satiety: number
+  energy: number
+  sleeping: boolean
+  lastCalculatedAt: number
+  lastInteractionAt: number
+}
+
 export interface ElectronAPI {
   checkSession: () => Promise<{
     logged_in: boolean
@@ -44,6 +53,8 @@ export interface ElectronAPI {
   refresh: () => Promise<void>
   onStateUpdate: (callback: (data: StateUpdate) => void) => () => void
   onAuthExpired: (callback: () => void) => () => void
+  loadPetLife: () => Promise<PetLifeSnapshot | null>
+  savePetLife: (snapshot: PetLifeSnapshot) => Promise<void>
   beginDrag: (sessionId: string) => Promise<void>
   moveDrag: (sessionId: string) => Promise<void>
   endDrag: (sessionId: string) => Promise<void>

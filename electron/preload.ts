@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { PollerState } from './poller/data-poller'
+import type { PetLifeSnapshot } from './pet-life/store'
 
 function subscribe<T>(channel: string, callback: (data: T) => void): () => void {
   const listener = (_event: Electron.IpcRendererEvent, data: T) => callback(data)
@@ -18,6 +19,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     subscribe('state-update', callback),
   onAuthExpired: (callback: () => void) =>
     subscribe('auth-expired', callback),
+  loadPetLife: (): Promise<PetLifeSnapshot | null> =>
+    ipcRenderer.invoke('pet-life:load'),
+  savePetLife: (snapshot: PetLifeSnapshot): Promise<void> =>
+    ipcRenderer.invoke('pet-life:save', snapshot),
   beginDrag: (sessionId: string): Promise<void> =>
     ipcRenderer.invoke('window:drag-begin', sessionId),
   moveDrag: (sessionId: string): Promise<void> =>
