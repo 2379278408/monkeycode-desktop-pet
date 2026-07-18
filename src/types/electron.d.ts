@@ -27,6 +27,8 @@ export interface StateUpdate {
   error: string | null
 }
 
+export type WindowMode = 'auth' | 'collapsed' | 'expanded'
+
 export interface ElectronAPI {
   checkSession: () => Promise<{
     logged_in: boolean
@@ -42,7 +44,11 @@ export interface ElectronAPI {
   refresh: () => Promise<void>
   onStateUpdate: (callback: (data: StateUpdate) => void) => () => void
   onAuthExpired: (callback: () => void) => () => void
-  resizeWindow: (width: number, height: number) => Promise<void>
+  beginDrag: (sessionId: string, x: number, y: number) => Promise<void>
+  moveDrag: (sessionId: string, x: number, y: number) => Promise<void>
+  endDrag: (sessionId: string) => Promise<void>
+  setMousePassthrough: (enabled: boolean) => Promise<void>
+  setWindowMode: (mode: WindowMode) => Promise<void>
   openExternal: (url: string) => Promise<void>
   checkin: () => Promise<{ success: boolean; error?: string }>
 }

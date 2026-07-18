@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { PetShell } from './components/PetShell'
 import { LoginForm } from './components/LoginForm'
 import { usePetStore } from './stores/pet-store'
@@ -21,15 +21,20 @@ export default function App() {
     'loading' | 'signed-out' | 'signed-in' | 'offline'
   >('loading')
   const [startupError, setStartupError] = useState('')
+  const sessionCheckGenerationRef = useRef(0)
 
   const runSessionCheck = () => {
+    const generation = sessionCheckGenerationRef.current + 1
+    sessionCheckGenerationRef.current = generation
     setAuthState('loading')
     void checkSessionWithTimeout()
       .then((result) => {
+        if (sessionCheckGenerationRef.current !== generation) return
         setAuthState(result.logged_in ? 'signed-in' : result.offline ? 'offline' : 'signed-out')
         setStartupError(result.error ?? '')
       })
       .catch((error: unknown) => {
+        if (sessionCheckGenerationRef.current !== generation) return
         setAuthState('signed-out')
         setStartupError(error instanceof Error ? error.message : '启动失败，请重试')
       })
@@ -37,16 +42,64 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = window.electronAPI.onAuthExpired(() => {
+      sessionCheckGenerationRef.current += 1
       resetPetState()
       setAuthState('signed-out')
       setStartupError('登录状态已失效，请重新登录')
     })
     runSessionCheck()
 
-    return unsubscribe
+    return () => {
+      sessionCheckGenerationRef.current += 1
+      unsubscribe()
+    }
   }, [])
 
+  useEffect(() => {
+    const mode = authState === 'signed-in' ? 'collapsed' : 'auth'
+    let cancelled = false
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+    let cancelRetryDelay: (() => void) | undefined
+
+    const applyMode = async () => {
+      for (let attempt = 0; attempt < 3 && !cancelled; attempt += 1) {
+        try {
+          await window.electronAPI.setWindowMode(mode)
+          return
+        } catch {
+          if (cancelled) return
+          if (attempt < 2) {
+            await new Promise<void>((resolve) => {
+              cancelRetryDelay = resolve
+              retryTimer = setTimeout(() => {
+                cancelRetryDelay = undefined
+                resolve()
+              }, 150)
+            })
+          }
+        }
+      }
+
+      if (cancelled) return
+      if (mode === 'collapsed') {
+        setStartupError('无法切换桌宠窗口模式，请稍后重试')
+        setAuthState('offline')
+      } else {
+        setStartupError('无法恢复登录窗口，请稍后重试')
+        if (authState !== 'offline') setAuthState('offline')
+      }
+    }
+
+    void applyMode()
+    return () => {
+      cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
+      cancelRetryDelay?.()
+    }
+  }, [authState])
+
   const handleLogout = async () => {
+    sessionCheckGenerationRef.current += 1
     try {
       await window.electronAPI.logout()
       resetPetState()
@@ -107,11 +160,11 @@ export default function App() {
         }}
       >
         <LoginForm
+          key={startupError}
           initialError={startupError}
           onLoginSuccess={() => {
             setStartupError('')
             setAuthState('signed-in')
-            void window.electronAPI.resizeWindow(380, 430)
           }}
         />
       </div>

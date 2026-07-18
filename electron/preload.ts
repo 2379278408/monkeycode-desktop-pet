@@ -18,8 +18,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     subscribe('state-update', callback),
   onAuthExpired: (callback: () => void) =>
     subscribe('auth-expired', callback),
-  resizeWindow: (width: number, height: number) =>
-    ipcRenderer.invoke('window:resize', width, height),
+  beginDrag: (sessionId: string, x: number, y: number): Promise<void> =>
+    ipcRenderer.invoke('window:drag-begin', sessionId, x, y),
+  moveDrag: (sessionId: string, x: number, y: number): Promise<void> =>
+    ipcRenderer.invoke('window:drag-move', sessionId, x, y),
+  endDrag: (sessionId: string): Promise<void> =>
+    ipcRenderer.invoke('window:drag-end', sessionId),
+  setMousePassthrough: (enabled: boolean): Promise<void> =>
+    ipcRenderer.invoke('window:set-mouse-passthrough', enabled),
+  setWindowMode: (mode: 'auth' | 'collapsed' | 'expanded'): Promise<void> =>
+    ipcRenderer.invoke('window:set-mode', mode),
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   checkin: () => ipcRenderer.invoke('wallet:checkin'),
 })
