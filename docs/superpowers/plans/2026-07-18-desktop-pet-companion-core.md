@@ -169,7 +169,7 @@ git commit -m "fix: 使用主进程光标修复桌宠拖动"
 - Consumes: 时间戳和上一次 `PetLifeSnapshot`。
 - Produces: `PetLifeSnapshot`、`PetForm`、`settlePetLife(snapshot, now)`、`derivePetForm(snapshot, previousForm)`、`applyPetEvent(snapshot, event, now)`。
 
-- [ ] **Step 1: 添加生命结算失败测试**
+- [x] **Step 1: 添加生命结算失败测试**
 
 创建 `src/lib/pet-life.test.ts`，覆盖：
 
@@ -214,13 +214,13 @@ it('applies feeding with clamping', () => {
 })
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run src/lib/pet-life.test.ts`
 
 Expected: FAIL，提示 `pet-life` 模块不存在。
 
-- [ ] **Step 3: 实现生命模型**
+- [x] **Step 3: 实现生命模型**
 
 创建 `src/lib/pet-life.ts`：
 
@@ -251,7 +251,7 @@ const MAX_SETTLEMENT_MS = 72 * HOUR_MS
 const clamp = (value: number) => Math.min(100, Math.max(0, value))
 ```
 
-实现 `settlePetLife` 时将有效时间差限制在 `0..MAX_SETTLEMENT_MS`，清醒时结算饱食度和精力，睡眠时结算精力；无互动超过 6 小时后结算心情。实现设计文档中的数值增减和形态滞回阈值。
+实现 `settlePetLife` 时将有效时间差限制在 `0..MAX_SETTLEMENT_MS`，清醒时结算饱食度和精力，睡眠时结算精力；无互动超过 6 小时后结算心情。非有限当前时间按零时间差处理，互动时间戳保持单调。实现设计文档中的数值增减和形态滞回阈值。
 
 核心结算使用以下公式：
 
@@ -280,24 +280,25 @@ export function applyPetEvent(
   now: number,
 ): PetLifeSnapshot {
   const settled = settlePetLife(snapshot, now)
-  if (event.type === 'feed') return { ...settled, satiety: clamp(settled.satiety + 25), mood: clamp(settled.mood + 2), lastInteractionAt: now }
-  if (event.type === 'sleep') return { ...settled, sleeping: true, lastInteractionAt: now }
-  if (event.type === 'wake') return { ...settled, sleeping: false, lastInteractionAt: now }
-  if (event.type === 'click') return { ...settled, mood: clamp(settled.mood + 1), lastInteractionAt: now }
-  if (event.type === 'double-click') return { ...settled, mood: clamp(settled.mood + 3), lastInteractionAt: now }
-  if (event.type === 'pet') return { ...settled, mood: clamp(settled.mood + Math.min(5, Math.floor(event.seconds / 2))), lastInteractionAt: now }
+  const interactionAt = settled.lastCalculatedAt
+  if (event.type === 'feed') return { ...settled, satiety: clamp(settled.satiety + 25), mood: clamp(settled.mood + 2), lastInteractionAt: interactionAt }
+  if (event.type === 'sleep') return { ...settled, sleeping: true, lastInteractionAt: interactionAt }
+  if (event.type === 'wake') return { ...settled, sleeping: false, lastInteractionAt: interactionAt }
+  if (event.type === 'click') return { ...settled, mood: clamp(settled.mood + 1), lastInteractionAt: interactionAt }
+  if (event.type === 'double-click') return { ...settled, mood: clamp(settled.mood + 3), lastInteractionAt: interactionAt }
+  if (event.type === 'pet') return { ...settled, mood: clamp(settled.mood + Math.min(5, Math.floor(event.seconds / 2))), lastInteractionAt: interactionAt }
   if (event.type === 'task-success') return { ...settled, mood: clamp(settled.mood + 2) }
   return { ...settled, mood: clamp(settled.mood - 2) }
 }
 ```
 
-- [ ] **Step 4: 运行生命模型测试**
+- [x] **Step 4: 运行生命模型测试**
 
 Run: `npx vitest run src/lib/pet-life.test.ts`
 
 Expected: PASS。
 
-- [ ] **Step 5: 提交生命模型**
+- [x] **Step 5: 提交生命模型**
 
 ```bash
 git add src/lib/pet-life.ts src/lib/pet-life.test.ts
