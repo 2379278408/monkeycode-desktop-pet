@@ -11,9 +11,18 @@ export interface WalletData {
   daily_token_limit?: number
 }
 
+export interface TaskTerminalEvent {
+  task_id: string
+  title?: string
+  status: 'finished' | 'error'
+  occurred_at: number
+}
+
 export interface StateUpdate {
   wallet: WalletData | null
   tasks: TaskData[]
+  checked_in: boolean | null
+  task_event: TaskTerminalEvent | null
   online: boolean
   error: string | null
 }
