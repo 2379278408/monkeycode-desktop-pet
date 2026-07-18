@@ -55,12 +55,14 @@
 - Modify: `electron/preload.ts`
 - Modify: `src/types/electron.d.ts`
 - Modify: `src/components/PetShell.tsx`
+- Create: `src/lib/drag-controller.ts`
+- Create: `src/lib/drag-controller.test.ts`
 
 **Interfaces:**
 - Consumes: `screen.getCursorScreenPoint(): Point`、现有 `clampWindowPosition` 和 `isRectangleCoveredByWorkAreas`。
-- Produces: `draggedWindowBounds(startBounds: Rectangle, startPointer: Point, currentPointer: Point): Rectangle`；`beginDrag(sessionId)`、`moveDrag(sessionId)`、`endDrag(sessionId)`。
+- Produces: `draggedWindowBounds(startBounds: Rectangle, startPointer: Point, currentPointer: Point): Rectangle`；`beginDrag(sessionId)`、`moveDrag(sessionId)`、`endDrag(sessionId)`、`cancelDrag(sessionId)`；可测试的 Renderer `DragController`。
 
-- [ ] **Step 1: 添加拖动位置纯函数失败测试**
+- [x] **Step 1: 添加拖动位置纯函数失败测试**
 
 在 `electron/window/interaction.test.ts` 添加：
 
@@ -76,13 +78,13 @@ it('moves from the fixed starting bounds using the latest DIP cursor', () => {
 })
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run electron/window/interaction.test.ts`
 
 Expected: FAIL，提示 `draggedWindowBounds` 尚未导出。
 
-- [ ] **Step 3: 实现纯函数并切换主进程光标采样**
+- [x] **Step 3: 实现纯函数并切换主进程光标采样**
 
 在 `electron/window/interaction.ts` 添加：
 
@@ -110,7 +112,6 @@ dragSession = {
   bounds: getPetWindow().getBounds(),
   lastActivityAt: Date.now(),
   lastWindowMoveAt: 0,
-  pendingBounds: null,
 }
 ```
 
@@ -126,7 +127,7 @@ const candidateBounds = draggedWindowBounds(
 
 让 `window:drag-end` 在关闭会话前使用当前光标重新计算并应用最终边界。保持会话 ID、超时、sender、mode 和边界校验。
 
-- [ ] **Step 4: 收紧 Renderer IPC 签名**
+- [x] **Step 4: 收紧 Renderer IPC 签名**
 
 将 `electron/preload.ts` 和 `src/types/electron.d.ts` 改为：
 
@@ -137,20 +138,22 @@ moveDrag: (sessionId: string): Promise<void> =>
   ipcRenderer.invoke('window:drag-move', sessionId),
 endDrag: (sessionId: string): Promise<void> =>
   ipcRenderer.invoke('window:drag-end', sessionId),
+cancelDrag: (sessionId: string): Promise<void> =>
+  ipcRenderer.invoke('window:drag-cancel', sessionId),
 ```
 
-`PetShell.tsx` 的移动泵只保留“存在最新移动通知”的布尔语义，每轮调用 `moveDrag(sessionId)`；开始调用改为 `beginDrag(sessionId)`。
+`PetShell.tsx` 在 pointerdown 调用 `beginDrag(sessionId)` 捕获起点；5 像素阈值前保持候选会话，点击和取消路径调用 `cancelDrag(sessionId)`。`DragController` 合并移动通知，pointerup 立即关闭本地会话并发送 end，后续通知直接丢弃。所有 transport 调用同时吸收同步抛出和异步拒绝。
 
-- [ ] **Step 5: 运行拖动与全量验证**
+- [x] **Step 5: 运行拖动与全量验证**
 
-Run: `npx vitest run electron/window/interaction.test.ts src/lib/pointer-gesture.test.ts && npm run verify`
+Run: `npx vitest run electron/window/interaction.test.ts src/lib/drag-controller.test.ts src/lib/pointer-gesture.test.ts && npm run verify`
 
 Expected: 定向测试和全部现有测试通过，TypeScript、Electron bundle 与 Vite 构建通过。
 
-- [ ] **Step 6: 提交拖动修复**
+- [x] **Step 6: 提交拖动修复**
 
 ```bash
-git add electron/window/interaction.ts electron/window/interaction.test.ts electron/main.ts electron/preload.ts src/types/electron.d.ts src/components/PetShell.tsx
+git add electron/window/interaction.ts electron/window/interaction.test.ts electron/main.ts electron/preload.ts src/types/electron.d.ts src/components/PetShell.tsx src/lib/drag-controller.ts src/lib/drag-controller.test.ts
 git commit -m "fix: 使用主进程光标修复桌宠拖动"
 ```
 

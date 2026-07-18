@@ -9,6 +9,7 @@ import { MonkeySprite, stateLabels } from './MonkeySprite'
 import { OrbitStatusPanel } from './OrbitStatusPanel'
 import { usePetStore } from '../stores/pet-store'
 import { classifyGesture } from '../lib/pointer-gesture'
+import { createDragController, type DragController } from '../lib/drag-controller'
 
 interface PetShellProps {
   onLogout: () => Promise<void>
@@ -16,13 +17,10 @@ interface PetShellProps {
 
 interface PointerSession {
   pointerId: number
-  dragSessionId: string
   start: ScreenPoint
   dragging: boolean
-  beginSucceeded: boolean
-  beginPromise: Promise<void>
-  latestMove: ScreenPoint | null
-  movePump: Promise<void> | null
+  closing: boolean
+  controller: DragController
 }
 
 interface ScreenPoint {
@@ -34,37 +32,6 @@ interface PassthroughController {
   request: (enabled: boolean) => Promise<boolean>
   markApplied: (enabled: boolean) => void
   markUnknown: () => void
-}
-
-function safely(operation: Promise<void>): Promise<void> {
-  return operation.catch(() => {})
-}
-
-function startMovePump(session: PointerSession): Promise<void> {
-  if (session.movePump) return session.movePump
-
-  const pump = (async () => {
-    await session.beginPromise
-    if (!session.beginSucceeded) {
-      session.latestMove = null
-      return
-    }
-    while (session.latestMove) {
-      const point = session.latestMove
-      session.latestMove = null
-      await safely(window.electronAPI.moveDrag(session.dragSessionId, point.x, point.y))
-    }
-  })()
-  session.movePump = pump.finally(() => {
-    session.movePump = null
-  })
-  return session.movePump
-}
-
-async function drainMovePump(session: PointerSession): Promise<void> {
-  while (session.latestMove || session.movePump) {
-    await startMovePump(session)
-  }
 }
 
 function createPassthroughController(): PassthroughController {
@@ -136,6 +103,23 @@ export function PetShell({ onLogout }: PetShellProps) {
     setMousePassthrough(!interactive)
   }, [setMousePassthrough])
 
+  const closePointerSession = useCallback((
+    session: PointerSession,
+    terminal: 'finish' | 'cancel',
+    onSettled: () => void,
+  ) => {
+    if (session.closing) return
+    session.closing = true
+    const operation = terminal === 'finish'
+      ? session.controller.finish()
+      : session.controller.cancel()
+    void operation.finally(() => {
+      if (pointerSessionRef.current === session) pointerSessionRef.current = null
+      draggingRef.current = false
+      onSettled()
+    }).catch(() => {})
+  }, [])
+
   useEffect(() => {
     const unsubscribe = window.electronAPI.onStateUpdate((data) => {
       updateFromAPI(data)
@@ -159,32 +143,31 @@ export function PetShell({ onLogout }: PetShellProps) {
       mountedRef.current = false
       window.removeEventListener('mousemove', handleMouseMove)
       const session = pointerSessionRef.current
-      pointerSessionRef.current = null
-      if (session?.dragging) {
-        void drainMovePump(session).then(() => session.beginSucceeded
-          ? safely(window.electronAPI.endDrag(session.dragSessionId))
-          : undefined)
+      if (session) {
+        const terminal = session.dragging
+          ? session.controller.finish()
+          : session.controller.cancel()
+        void terminal.finally(() => {
+          if (pointerSessionRef.current === session) pointerSessionRef.current = null
+          draggingRef.current = false
+          void passthroughController.request(false)
+        }).catch(() => {})
+      } else {
+        draggingRef.current = false
+        void passthroughController.request(false)
       }
-      draggingRef.current = false
       modeTransitionRef.current = false
       modeGenerationRef.current += 1
-      void passthroughController.request(false)
     }
   }, [passthroughController, restorePassthroughAt, setMousePassthrough])
 
   const finishDrag = useCallback((session: PointerSession, screenX: number, screenY: number) => {
-    session.latestMove = { x: screenX, y: screenY }
-    void drainMovePump(session)
-      .then(() => session.beginSucceeded
-        ? safely(window.electronAPI.endDrag(session.dragSessionId))
-        : undefined)
-      .then(() => {
-        draggingRef.current = false
-        if (mountedRef.current) {
-          restorePassthroughAt(screenX - window.screenX, screenY - window.screenY)
-        }
-      })
-  }, [restorePassthroughAt])
+    closePointerSession(session, 'finish', () => {
+      if (mountedRef.current) {
+        restorePassthroughAt(screenX - window.screenX, screenY - window.screenY)
+      }
+    })
+  }, [closePointerSession, restorePassthroughAt])
 
   const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0
@@ -192,19 +175,31 @@ export function PetShell({ onLogout }: PetShellProps) {
       || draggingRef.current
       || modeTransitionRef.current) return
 
-    pointerSessionRef.current = {
+    const dragSessionId = crypto.randomUUID()
+    const controller = createDragController(dragSessionId, {
+      begin: window.electronAPI.beginDrag,
+      move: window.electronAPI.moveDrag,
+      end: window.electronAPI.endDrag,
+      cancel: window.electronAPI.cancelDrag,
+    })
+    const session: PointerSession = {
       pointerId: event.pointerId,
-      dragSessionId: crypto.randomUUID(),
       start: { x: event.screenX, y: event.screenY },
       dragging: false,
-      beginSucceeded: false,
-      beginPromise: Promise.resolve(),
-      latestMove: null,
-      movePump: null,
+      closing: false,
+      controller,
     }
-    event.currentTarget.setPointerCapture(event.pointerId)
+    pointerSessionRef.current = session
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      closePointerSession(session, 'cancel', () => {
+        if (mountedRef.current) restorePassthroughAt(event.clientX, event.clientY)
+      })
+      return
+    }
     setMousePassthrough(false)
-  }, [setMousePassthrough])
+  }, [closePointerSession, restorePassthroughAt, setMousePassthrough])
 
   const handlePointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const session = pointerSessionRef.current
@@ -212,31 +207,25 @@ export function PetShell({ onLogout }: PetShellProps) {
 
     if (!session.dragging
       && classifyGesture(session.start, { x: event.screenX, y: event.screenY }, 5) === 'drag') {
+      if (!session.controller.startDragging()) return
       session.dragging = true
       draggingRef.current = true
       setMousePassthrough(false)
-      session.beginPromise = window.electronAPI.beginDrag(
-        session.dragSessionId,
-        session.start.x,
-        session.start.y,
-      ).then(() => {
-        session.beginSucceeded = true
-      }).catch(() => {})
-      session.latestMove = { x: event.screenX, y: event.screenY }
-      void startMovePump(session)
+      session.controller.notifyMove()
       return
     }
 
     if (session.dragging) {
-      session.latestMove = { x: event.screenX, y: event.screenY }
-      void startMovePump(session)
+      session.controller.notifyMove()
     }
   }, [setMousePassthrough])
 
   const releasePointer = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    }
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+    } catch {}
   }
 
   const toggleCard = useCallback((pointerScreenPosition?: ScreenPoint) => {
@@ -279,16 +268,18 @@ export function PetShell({ onLogout }: PetShellProps) {
   const handlePointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const session = pointerSessionRef.current
     if (!session || session.pointerId !== event.pointerId) return
-    pointerSessionRef.current = null
-    releasePointer(event)
 
     if (session.dragging) {
       finishDrag(session, event.screenX, event.screenY)
+      releasePointer(event)
       return
     }
 
-    toggleCard({ x: event.screenX, y: event.screenY })
-  }, [finishDrag, toggleCard])
+    closePointerSession(session, 'cancel', () => {
+      if (mountedRef.current) toggleCard({ x: event.screenX, y: event.screenY })
+    })
+    releasePointer(event)
+  }, [closePointerSession, finishDrag, toggleCard])
 
   const cancelPointerSession = useCallback((
     event: ReactPointerEvent<HTMLDivElement>,
@@ -296,15 +287,16 @@ export function PetShell({ onLogout }: PetShellProps) {
   ) => {
     const session = pointerSessionRef.current
     if (!session || session.pointerId !== event.pointerId) return
-    pointerSessionRef.current = null
-    if (shouldReleasePointer) releasePointer(event)
 
     if (session.dragging) {
       finishDrag(session, event.screenX, event.screenY)
     } else {
-      restorePassthroughAt(event.clientX, event.clientY)
+      closePointerSession(session, 'cancel', () => {
+        if (mountedRef.current) restorePassthroughAt(event.clientX, event.clientY)
+      })
     }
-  }, [finishDrag, restorePassthroughAt])
+    if (shouldReleasePointer) releasePointer(event)
+  }, [closePointerSession, finishDrag, restorePassthroughAt])
 
   const handlePointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     cancelPointerSession(event, true)

@@ -11,6 +11,7 @@ import {
   anchoredBottomCenterBounds,
   canEnableMousePassthrough,
   clampWindowPosition,
+  draggedWindowBounds,
   isRectangleCoveredByWorkAreas,
   WINDOW_SIZES,
   type Point,
@@ -18,7 +19,6 @@ import {
   type WindowMode,
 } from './window/interaction'
 
-const MAX_POINTER_COORDINATE = 1_000_000
 const DRAG_SESSION_TIMEOUT_MS = 60_000
 const WINDOW_MOVE_THROTTLE_MS = 6
 
@@ -34,7 +34,6 @@ let dragSession: {
   bounds: Rectangle
   lastActivityAt: number
   lastWindowMoveAt: number
-  pendingBounds: Rectangle | null
 } | null = null
 let checkinCoordinator: CheckinCoordinator
 let currentWindowMode: WindowMode = 'auth'
@@ -101,14 +100,6 @@ function getPetWindow(): BrowserWindow {
 
 function assertArgumentCount(args: unknown[], expected: number): void {
   if (args.length !== expected) throw new Error('无效窗口参数')
-}
-
-function assertPointerCoordinate(value: unknown): asserts value is number {
-  if (typeof value !== 'number'
-    || !Number.isFinite(value)
-    || Math.abs(value) > MAX_POINTER_COORDINATE) {
-    throw new Error('无效指针坐标')
-  }
 }
 
 function assertDragSessionId(value: unknown): asserts value is string {
@@ -308,32 +299,27 @@ function registerIPC(): void {
 
   ipcMain.handle('window:drag-begin', (event, ...args: unknown[]) => {
     assertTrustedSender(event)
-    assertArgumentCount(args, 3)
-    const [sessionId, x, y] = args
+    assertArgumentCount(args, 1)
+    const [sessionId] = args
     assertDragSessionId(sessionId)
-    assertPointerCoordinate(x)
-    assertPointerCoordinate(y)
     const now = Date.now()
     if (dragSession && now - dragSession.lastActivityAt <= DRAG_SESSION_TIMEOUT_MS) {
       throw new Error('拖动会话已存在')
     }
     dragSession = {
       id: sessionId,
-      pointer: { x, y },
+      pointer: screen.getCursorScreenPoint(),
       bounds: getPetWindow().getBounds(),
       lastActivityAt: now,
       lastWindowMoveAt: 0,
-      pendingBounds: null,
     }
   })
 
   ipcMain.handle('window:drag-move', (event, ...args: unknown[]) => {
     assertTrustedSender(event)
-    assertArgumentCount(args, 3)
-    const [sessionId, x, y] = args
+    assertArgumentCount(args, 1)
+    const [sessionId] = args
     assertDragSessionId(sessionId)
-    assertPointerCoordinate(x)
-    assertPointerCoordinate(y)
     if (!dragSession) throw new Error('拖动会话未开始')
     if (dragSession.id !== sessionId) throw new Error('拖动会话不匹配')
     const now = Date.now()
@@ -342,22 +328,18 @@ function registerIPC(): void {
       throw new Error('拖动会话已过期')
     }
 
-    const currentPointer = { x, y }
-    const candidateBounds = {
-      x: Math.round(dragSession.bounds.x + currentPointer.x - dragSession.pointer.x),
-      y: Math.round(dragSession.bounds.y + currentPointer.y - dragSession.pointer.y),
-      width: dragSession.bounds.width,
-      height: dragSession.bounds.height,
-    }
+    const candidateBounds = draggedWindowBounds(
+      dragSession.bounds,
+      dragSession.pointer,
+      screen.getCursorScreenPoint(),
+    )
     if (now - dragSession.lastWindowMoveAt < WINDOW_MOVE_THROTTLE_MS) {
-      dragSession.pendingBounds = candidateBounds
       dragSession.lastActivityAt = now
       return
     }
     applyCandidateWindowBounds(candidateBounds)
     dragSession.lastActivityAt = now
     dragSession.lastWindowMoveAt = now
-    dragSession.pendingBounds = null
   })
 
   ipcMain.handle('window:drag-end', (event, ...args: unknown[]) => {
@@ -373,10 +355,28 @@ function registerIPC(): void {
     }
     const session = dragSession
     try {
-      if (session.pendingBounds) applyCandidateWindowBounds(session.pendingBounds)
+      applyCandidateWindowBounds(draggedWindowBounds(
+        session.bounds,
+        session.pointer,
+        screen.getCursorScreenPoint(),
+      ))
     } finally {
       if (dragSession === session) dragSession = null
     }
+  })
+
+  ipcMain.handle('window:drag-cancel', (event, ...args: unknown[]) => {
+    assertTrustedSender(event)
+    assertArgumentCount(args, 1)
+    const [sessionId] = args
+    assertDragSessionId(sessionId)
+    if (!dragSession) throw new Error('拖动会话未开始')
+    if (dragSession.id !== sessionId) throw new Error('拖动会话不匹配')
+    if (Date.now() - dragSession.lastActivityAt > DRAG_SESSION_TIMEOUT_MS) {
+      dragSession = null
+      throw new Error('拖动会话已过期')
+    }
+    dragSession = null
   })
 
   ipcMain.handle('window:set-mouse-passthrough', (event, ...args: unknown[]) => {

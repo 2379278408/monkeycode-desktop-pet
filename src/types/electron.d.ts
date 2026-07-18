@@ -44,9 +44,10 @@ export interface ElectronAPI {
   refresh: () => Promise<void>
   onStateUpdate: (callback: (data: StateUpdate) => void) => () => void
   onAuthExpired: (callback: () => void) => () => void
-  beginDrag: (sessionId: string, x: number, y: number) => Promise<void>
-  moveDrag: (sessionId: string, x: number, y: number) => Promise<void>
+  beginDrag: (sessionId: string) => Promise<void>
+  moveDrag: (sessionId: string) => Promise<void>
   endDrag: (sessionId: string) => Promise<void>
+  cancelDrag: (sessionId: string) => Promise<void>
   setMousePassthrough: (enabled: boolean) => Promise<void>
   setWindowMode: (mode: WindowMode) => Promise<void>
   openExternal: (url: string) => Promise<void>

@@ -40,6 +40,19 @@ export function clampWindowPosition(
   }
 }
 
+export function draggedWindowBounds(
+  startBounds: Rectangle,
+  startPointer: Point,
+  currentPointer: Point,
+): Rectangle {
+  return {
+    x: Math.round(startBounds.x + currentPointer.x - startPointer.x),
+    y: Math.round(startBounds.y + currentPointer.y - startPointer.y),
+    width: startBounds.width,
+    height: startBounds.height,
+  }
+}
+
 export function anchoredBottomCenterBounds(
   oldBounds: Rectangle,
   newSize: Size,

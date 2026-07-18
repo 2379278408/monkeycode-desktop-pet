@@ -3,6 +3,7 @@ import {
   anchoredBottomCenterBounds,
   canEnableMousePassthrough,
   clampWindowPosition,
+  draggedWindowBounds,
   isRectangleCoveredByWorkAreas,
   WINDOW_SIZES,
 } from './interaction'
@@ -41,6 +42,16 @@ describe('clampWindowPosition', () => {
       { width: 2000, height: 1200 },
       { x: -1920, y: 0, width: 1920, height: 1080 },
     )).toEqual({ x: -1920, y: 0 })
+  })
+})
+
+describe('draggedWindowBounds', () => {
+  it('moves from the fixed starting bounds using the latest DIP cursor', () => {
+    expect(draggedWindowBounds(
+      { x: 400, y: 300, width: 380, height: 430 },
+      { x: 600, y: 500 },
+      { x: 645, y: 530 },
+    )).toEqual({ x: 445, y: 330, width: 380, height: 430 })
   })
 })
 
