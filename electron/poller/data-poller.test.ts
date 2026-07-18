@@ -102,9 +102,33 @@ describe('DataPoller', () => {
 
     await poller.refreshTasks()
     await poller.refreshTasks()
+    await poller.refreshTasks()
 
     expect(updates.flatMap((state) => state.task_event ? [state.task_event] : []))
       .toEqual([{ task_id: 't1', title: 'Failed task', status: 'error', occurred_at: expect.any(Number) }])
+  })
+
+  it('refreshes wallet again after a terminal event in refreshAll', async () => {
+    let activeRequestCount = 0
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
+      if (path === '/api/v1/users/wallet/checkin') return Promise.resolve({ checked_in: false })
+      if (path.includes('status=processing,pending')) {
+        activeRequestCount += 1
+        return Promise.resolve(activeRequestCount === 1
+          ? { tasks: [{ id: 't1', status: 'processing' }] }
+          : { tasks: [] })
+      }
+      if (path === '/api/v1/users/tasks/t1') {
+        return Promise.resolve({ id: 't1', status: 'finished' })
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    await poller.refreshAll()
+    await poller.refreshAll()
+
+    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet')).toHaveLength(3)
   })
 
   it('retries terminal confirmation after a detail request fails', async () => {
@@ -242,20 +266,37 @@ describe('DataPoller', () => {
     expect(vi.getTimerCount()).toBe(1)
   })
 
-  it('suppresses overlapping refreshes', async () => {
-    const resolvers: Array<(value: unknown) => void> = []
-    api.request.mockImplementation(() => new Promise((resolve) => {
-      resolvers.push(resolve)
-    }))
+  it('merges overlapping refreshes and preserves a checked-in mutation', async () => {
+    let resolveFirstWallet: ((value: unknown) => void) | undefined
+    let walletRequestCount = 0
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/wallet') {
+        walletRequestCount += 1
+        if (walletRequestCount === 1) {
+          return new Promise((resolve) => {
+            resolveFirstWallet = resolve
+          })
+        }
+        return Promise.resolve(wallet)
+      }
+      if (path === '/api/v1/users/wallet/checkin') return Promise.resolve({ checked_in: false })
+      return Promise.resolve({ tasks: [{ id: 't1', status: 'processing' }] })
+    })
+    const updates: PollerState[] = []
+    poller.onUpdate((state) => updates.push(state))
 
-    const first = poller.refreshAll()
-    const second = poller.refreshAll()
-    expect(api.request).toHaveBeenCalledTimes(3)
-    resolvers[0](wallet)
-    resolvers[1]({ checked_in: false })
-    resolvers[2]({ tasks: [] })
-    await Promise.all([first, second])
-    expect(api.request).toHaveBeenCalledTimes(3)
+    const refreshAll = poller.refreshAll()
+    const refreshTasks = poller.refreshTasks()
+    const markCheckedIn = poller.markCheckedIn()
+    resolveFirstWallet?.(wallet)
+    await Promise.all([refreshAll, refreshTasks, markCheckedIn])
+
+    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet')).toHaveLength(2)
+    expect(api.request.mock.calls.filter(([path]) => String(path).includes('status=processing,pending'))).toHaveLength(2)
+    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet/checkin')).toHaveLength(1)
+    const checkedInIndex = updates.findIndex((state) => state.checked_in === true)
+    expect(checkedInIndex).toBeGreaterThanOrEqual(0)
+    expect(updates.slice(checkedInIndex).every((state) => state.checked_in === true)).toBe(true)
   })
 
   it('preserves data and reports offline network state', async () => {
@@ -315,6 +356,119 @@ describe('DataPoller', () => {
     api.request.mockResolvedValue({ tasks: [] })
     await poller.refreshTasks()
     expect(api.request).not.toHaveBeenCalledWith('/api/v1/users/tasks/old')
+  })
+
+  it('discards queued refresh selections from an old generation', async () => {
+    let resolveTasks: ((value: unknown) => void) | undefined
+    api.request.mockImplementation((path: string) => {
+      if (path.includes('status=processing,pending')) {
+        return new Promise((resolve) => {
+          resolveTasks = resolve
+        })
+      }
+      return Promise.resolve(wallet)
+    })
+    const inFlight = poller.refreshTasks()
+    const queued = poller.refreshAll()
+
+    poller.reset()
+    resolveTasks?.({ tasks: [] })
+    await Promise.all([inFlight, queued])
+
+    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet')).toHaveLength(0)
+    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet/checkin')).toHaveLength(0)
+    expect(api.request.mock.calls.filter(([path]) => String(path).includes('status=processing,pending'))).toHaveLength(1)
+  })
+
+  it('ignores stale task detail errors after reset', async () => {
+    let rejectDetail: ((error: unknown) => void) | undefined
+    let activeRequestCount = 0
+    api.request.mockImplementation((path: string) => {
+      if (path.includes('status=processing,pending')) {
+        activeRequestCount += 1
+        return Promise.resolve(activeRequestCount === 1
+          ? { tasks: [{ id: 't1', status: 'processing' }] }
+          : { tasks: [] })
+      }
+      if (path === '/api/v1/users/tasks/t1') {
+        return new Promise((_, reject) => {
+          rejectDetail = reject
+        })
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+    const expired = vi.fn()
+    const updates: PollerState[] = []
+    poller.onAuthExpired(expired)
+    poller.onUpdate((state) => updates.push(state))
+    await poller.refreshTasks()
+    const staleRefresh = poller.refreshTasks()
+    await vi.advanceTimersByTimeAsync(0)
+
+    poller.reset()
+    rejectDetail?.(new ApiError('未登录', 401, 401))
+    await staleRefresh
+
+    expect(expired).not.toHaveBeenCalled()
+    expect(updates.some((state) => state.task_event !== null)).toBe(false)
+  })
+
+  it('queries checkin again after reset', async () => {
+    await poller.refreshAll()
+    poller.reset()
+
+    await poller.refreshAll()
+
+    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet/checkin')).toHaveLength(2)
+  })
+
+  it('expires auth when task detail returns unauthorized', async () => {
+    let activeRequestCount = 0
+    api.request.mockImplementation((path: string) => {
+      if (path.includes('status=processing,pending')) {
+        activeRequestCount += 1
+        return Promise.resolve(activeRequestCount === 1
+          ? { tasks: [{ id: 't1', status: 'processing' }] }
+          : { tasks: [] })
+      }
+      if (path === '/api/v1/users/tasks/t1') {
+        return Promise.reject(new ApiError('未登录', 401, 401))
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+    const expired = vi.fn()
+    poller.onAuthExpired(expired)
+
+    await poller.refreshTasks()
+    await poller.refreshTasks()
+
+    expect(expired).toHaveBeenCalledOnce()
+  })
+
+  it('expires auth when the terminal wallet refresh returns unauthorized', async () => {
+    let activeRequestCount = 0
+    api.request.mockImplementation((path: string) => {
+      if (path.includes('status=processing,pending')) {
+        activeRequestCount += 1
+        return Promise.resolve(activeRequestCount === 1
+          ? { tasks: [{ id: 't1', status: 'processing' }] }
+          : { tasks: [] })
+      }
+      if (path === '/api/v1/users/tasks/t1') {
+        return Promise.resolve({ id: 't1', status: 'finished' })
+      }
+      if (path === '/api/v1/users/wallet') {
+        return Promise.reject(new ApiError('未登录', 401, 401))
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+    const expired = vi.fn()
+    poller.onAuthExpired(expired)
+
+    await poller.refreshTasks()
+    await poller.refreshTasks()
+
+    expect(expired).toHaveBeenCalledOnce()
   })
 
   it('ignores a stale unauthorized response after stop and restart', async () => {

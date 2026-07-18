@@ -31,6 +31,13 @@ interface RefreshSelection {
   checkin?: boolean
 }
 
+interface RefreshQueue {
+  generation: number
+  pending: RefreshSelection
+  promise: Promise<void>
+  resolve: () => void
+}
+
 type Settled<T> = { value: T; error?: never } | { value?: never; error: unknown }
 
 const ACTIVE_TASK_PATH = '/api/v1/users/tasks?status=processing,pending'
@@ -63,11 +70,14 @@ export class DataPoller {
   private readonly taskIntervalMs: number
   private readonly walletIntervalMs: number
   private generation = 0
-  private inFlightGeneration: number | null = null
+  private refreshQueue: RefreshQueue | null = null
   private hasTaskBaseline = false
   private trackedActiveTasks = new Map<string, ProjectTask>()
   private checkinCacheGeneration: number | null = null
   private checkinCacheDate: string | null = null
+  private checkinMutationVersion = 0
+  private checkedInMutationGeneration: number | null = null
+  private checkedInMutationDate: string | null = null
   private lastWalletRefreshAt: number | null = null
   private state: PollerState = {
     wallet: null,
@@ -141,8 +151,11 @@ export class DataPoller {
   }
 
   async markCheckedIn(): Promise<void> {
+    this.checkinMutationVersion += 1
     this.checkinCacheGeneration = this.generation
     this.checkinCacheDate = localDate()
+    this.checkedInMutationGeneration = this.generation
+    this.checkedInMutationDate = this.checkinCacheDate
     this.state = { ...this.state, checked_in: true, task_event: null }
     this.publish()
     await this.runRefresh({ wallet: true })
@@ -158,10 +171,42 @@ export class DataPoller {
     return this.runRefresh({ tasks: true, wallet: walletDue, checkin: checkinDue })
   }
 
-  private async runRefresh(selection: RefreshSelection): Promise<void> {
+  private runRefresh(selection: RefreshSelection): Promise<void> {
     const generation = this.generation
-    if (this.inFlightGeneration === generation) return
-    this.inFlightGeneration = generation
+    if (this.refreshQueue?.generation === generation) {
+      this.mergeSelection(this.refreshQueue.pending, selection)
+      return this.refreshQueue.promise
+    }
+
+    let resolveQueue = (): void => undefined
+    const queue: RefreshQueue = {
+      generation,
+      pending: { ...selection },
+      promise: new Promise((resolve) => {
+        resolveQueue = resolve
+      }),
+      resolve: () => resolveQueue(),
+    }
+    this.refreshQueue = queue
+    void this.drainRefreshQueue(queue)
+    return queue.promise
+  }
+
+  private async drainRefreshQueue(queue: RefreshQueue): Promise<void> {
+    try {
+      while (queue.generation === this.generation && this.hasSelection(queue.pending)) {
+        const selection = queue.pending
+        queue.pending = {}
+        await this.executeRefresh(selection, queue.generation)
+      }
+    } finally {
+      if (this.refreshQueue === queue) this.refreshQueue = null
+      queue.resolve()
+    }
+  }
+
+  private async executeRefresh(selection: RefreshSelection, generation: number): Promise<void> {
+    const checkinVersion = this.checkinMutationVersion
 
     try {
       const [walletResult, checkinResult, taskListResult] = await Promise.all([
@@ -185,14 +230,19 @@ export class DataPoller {
 
       let wallet = walletResult?.value ?? this.state.wallet
       let tasks = this.state.tasks
-      let checkedIn = checkinResult?.value?.checked_in ?? this.state.checked_in
+      let checkedIn = this.state.checked_in
       let taskEvents: TaskTerminalEvent[] = []
       const errors = [...initialErrors]
 
       if (walletResult?.value !== undefined) this.lastWalletRefreshAt = Date.now()
-      if (checkinResult?.value !== undefined) {
+      if (checkinResult?.value !== undefined && checkinVersion === this.checkinMutationVersion) {
         this.checkinCacheGeneration = generation
         this.checkinCacheDate = localDate()
+        const hasCurrentCheckedInMutation = this.checkedInMutationGeneration === generation
+          && this.checkedInMutationDate === this.checkinCacheDate
+        if (!hasCurrentCheckedInMutation || checkinResult.value.checked_in !== false) {
+          checkedIn = checkinResult.value.checked_in ?? null
+        }
       }
 
       if (taskListResult?.value !== undefined) {
@@ -204,7 +254,7 @@ export class DataPoller {
         errors.push(...taskResult.errors)
       }
 
-      if (taskEvents.length > 0 && !selection.wallet) {
+      if (taskEvents.length > 0) {
         const terminalWalletResult = await settle(this.api.request<Wallet>('/api/v1/users/wallet'))
         if (generation !== this.generation) return
         if ('error' in terminalWalletResult) {
@@ -230,9 +280,27 @@ export class DataPoller {
       } else {
         for (const taskEvent of taskEvents) this.publish(taskEvent)
       }
-    } finally {
-      if (this.inFlightGeneration === generation) this.inFlightGeneration = null
+    } catch (error) {
+      if (generation !== this.generation) return
+      if (this.expireAuthIfNeeded([error])) return
+      this.state = {
+        ...this.state,
+        task_event: null,
+        online: !(error instanceof ApiError && error.httpStatus === 0),
+        error: errorMessage(error),
+      }
+      this.publish()
     }
+  }
+
+  private mergeSelection(target: RefreshSelection, selection: RefreshSelection): void {
+    target.tasks ||= selection.tasks
+    target.wallet ||= selection.wallet
+    target.checkin ||= selection.checkin
+  }
+
+  private hasSelection(selection: RefreshSelection): boolean {
+    return Boolean(selection.tasks || selection.wallet || selection.checkin)
   }
 
   private async processTaskList(
@@ -303,6 +371,9 @@ export class DataPoller {
     this.trackedActiveTasks.clear()
     this.checkinCacheGeneration = null
     this.checkinCacheDate = null
+    this.checkinMutationVersion += 1
+    this.checkedInMutationGeneration = null
+    this.checkedInMutationDate = null
     this.lastWalletRefreshAt = null
   }
 
