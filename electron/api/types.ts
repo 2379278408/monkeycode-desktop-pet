@@ -19,6 +19,10 @@ export interface Wallet {
   daily_token_limit?: number
 }
 
+export interface CheckinStatus {
+  checked_in?: boolean
+}
+
 export interface ProjectTask {
   id: string
   title?: string
@@ -28,4 +32,11 @@ export interface ProjectTask {
 
 export interface TaskList {
   tasks?: ProjectTask[]
+}
+
+export interface TaskTerminalEvent {
+  task_id: string
+  title?: string
+  status: 'finished' | 'error'
+  occurred_at: number
 }

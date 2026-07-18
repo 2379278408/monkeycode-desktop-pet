@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '../api/client'
+import type { PollerState } from './data-poller'
 import { DataPoller } from './data-poller'
+
+const wallet = { balance: 100, daily_token_balance: 200, daily_token_limit: 300 }
 
 describe('DataPoller', () => {
   const api = { request: vi.fn() }
@@ -8,13 +11,14 @@ describe('DataPoller', () => {
 
   beforeEach(() => {
     vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 6, 18, 12))
     vi.clearAllMocks()
-    api.request.mockImplementation((path: string) => Promise.resolve(
-      path.includes('/wallet')
-        ? { balance: 100, daily_token_balance: 200, daily_token_limit: 300 }
-        : { tasks: [{ id: 't1', title: 'Task', status: 'processing' }] },
-    ))
-    poller = new DataPoller(api, 30_000)
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
+      if (path === '/api/v1/users/wallet/checkin') return Promise.resolve({ checked_in: false })
+      return Promise.resolve({ tasks: [{ id: 't1', title: 'Task', status: 'processing' }] })
+    })
+    poller = new DataPoller(api, { taskIntervalMs: 15_000, walletIntervalMs: 300_000 })
   })
 
   afterEach(() => {
@@ -22,18 +26,209 @@ describe('DataPoller', () => {
     vi.useRealTimers()
   })
 
-  it('publishes wallet and tasks immediately', async () => {
+  it('publishes wallet, tasks, and checkin status immediately', async () => {
     const callback = vi.fn()
     poller.onUpdate(callback)
 
-    await poller.refresh()
+    await poller.refreshAll()
 
     expect(callback).toHaveBeenCalledWith(expect.objectContaining({
       wallet: expect.objectContaining({ balance: 100 }),
       tasks: [expect.objectContaining({ id: 't1' })],
+      checked_in: false,
+      task_event: null,
       online: true,
       error: null,
     }))
+  })
+
+  it('uses the first active task response only as a baseline', async () => {
+    const updates: PollerState[] = []
+    poller.onUpdate((state) => updates.push(state))
+
+    await poller.refreshTasks()
+
+    expect(updates).toHaveLength(1)
+    expect(updates[0].task_event).toBeNull()
+    expect(api.request).toHaveBeenCalledTimes(1)
+  })
+
+  it('confirms a missing active task and emits finished once', async () => {
+    let activeRequestCount = 0
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
+      if (path === '/api/v1/users/wallet/checkin') return Promise.resolve({ checked_in: false })
+      if (path.includes('status=processing,pending')) {
+        activeRequestCount += 1
+        return Promise.resolve(activeRequestCount === 1
+          ? { tasks: [{ id: 't1', title: 'Task t1', status: 'processing' }] }
+          : { tasks: [] })
+      }
+      if (path === '/api/v1/users/tasks/t1') {
+        return Promise.resolve({ id: 't1', title: 'Task t1', status: 'finished' })
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+    const updates: PollerState[] = []
+    poller.onUpdate((state) => updates.push(state))
+
+    await poller.refreshAll()
+    await poller.refreshTasks()
+    await poller.refreshTasks()
+
+    expect(updates.flatMap((state) => state.task_event ? [state.task_event] : []))
+      .toEqual([{ task_id: 't1', title: 'Task t1', status: 'finished', occurred_at: expect.any(Number) }])
+    expect(api.request).toHaveBeenCalledWith('/api/v1/users/tasks/t1')
+    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet')).toHaveLength(2)
+  })
+
+  it('emits an error terminal event', async () => {
+    let activeRequestCount = 0
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
+      if (path.includes('status=processing,pending')) {
+        activeRequestCount += 1
+        return Promise.resolve(activeRequestCount === 1
+          ? { tasks: [{ id: 't1', title: 'Original title', status: 'pending' }] }
+          : { tasks: [] })
+      }
+      if (path === '/api/v1/users/tasks/t1') {
+        return Promise.resolve({ id: 't1', title: 'Failed task', status: 'error' })
+      }
+      return Promise.resolve({ checked_in: false })
+    })
+    const updates: PollerState[] = []
+    poller.onUpdate((state) => updates.push(state))
+
+    await poller.refreshTasks()
+    await poller.refreshTasks()
+
+    expect(updates.flatMap((state) => state.task_event ? [state.task_event] : []))
+      .toEqual([{ task_id: 't1', title: 'Failed task', status: 'error', occurred_at: expect.any(Number) }])
+  })
+
+  it('retries terminal confirmation after a detail request fails', async () => {
+    let activeRequestCount = 0
+    let detailRequestCount = 0
+    api.request.mockImplementation((path: string) => {
+      if (path.includes('status=processing,pending')) {
+        activeRequestCount += 1
+        return Promise.resolve(activeRequestCount === 1
+          ? { tasks: [{ id: 'task/a b', title: 'Encoded', status: 'processing' }] }
+          : { tasks: [] })
+      }
+      if (path === '/api/v1/users/tasks/task%2Fa%20b') {
+        detailRequestCount += 1
+        return detailRequestCount === 1
+          ? Promise.reject(new Error('detail unavailable'))
+          : Promise.resolve({ id: 'task/a b', title: 'Encoded', status: 'finished' })
+      }
+      if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
+      throw new Error(`Unexpected path: ${path}`)
+    })
+    const updates: PollerState[] = []
+    poller.onUpdate((state) => updates.push(state))
+
+    await poller.refreshTasks()
+    await poller.refreshTasks()
+    expect(updates.some((state) => state.task_event)).toBe(false)
+
+    await poller.refreshTasks()
+    expect(detailRequestCount).toBe(2)
+    expect(updates.flatMap((state) => state.task_event ? [state.task_event.status] : [])).toEqual(['finished'])
+  })
+
+  it('retains a missing task while its detail is still active', async () => {
+    let activeRequestCount = 0
+    let detailRequestCount = 0
+    api.request.mockImplementation((path: string) => {
+      if (path.includes('status=processing,pending')) {
+        activeRequestCount += 1
+        return Promise.resolve(activeRequestCount === 1
+          ? { tasks: [{ id: 't1', status: 'processing' }] }
+          : { tasks: [] })
+      }
+      if (path === '/api/v1/users/tasks/t1') {
+        detailRequestCount += 1
+        return Promise.resolve({ id: 't1', status: detailRequestCount === 1 ? 'processing' : 'finished' })
+      }
+      if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
+      throw new Error(`Unexpected path: ${path}`)
+    })
+    const updates: PollerState[] = []
+    poller.onUpdate((state) => updates.push(state))
+
+    await poller.refreshTasks()
+    await poller.refreshTasks()
+    await poller.refreshTasks()
+
+    expect(detailRequestCount).toBe(2)
+    expect(updates.flatMap((state) => state.task_event ? [state.task_event.status] : [])).toEqual(['finished'])
+  })
+
+  it('tracks at most three active tasks', async () => {
+    let activeRequestCount = 0
+    api.request.mockImplementation((path: string) => {
+      if (path.includes('status=processing,pending')) {
+        activeRequestCount += 1
+        return Promise.resolve(activeRequestCount === 1
+          ? { tasks: Array.from({ length: 5 }, (_, index) => ({ id: `t${index + 1}`, status: 'processing' })) }
+          : { tasks: [] })
+      }
+      if (path.startsWith('/api/v1/users/tasks/')) {
+        return Promise.resolve({ id: path.split('/').slice(-1)[0], status: 'finished' })
+      }
+      if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    await poller.refreshTasks()
+    await poller.refreshTasks()
+
+    const detailPaths = api.request.mock.calls
+      .map(([path]) => path as string)
+      .filter((path) => path.startsWith('/api/v1/users/tasks/'))
+    expect(detailPaths).toEqual([
+      '/api/v1/users/tasks/t1',
+      '/api/v1/users/tasks/t2',
+      '/api/v1/users/tasks/t3',
+    ])
+  })
+
+  it('refreshes tasks every 15 seconds and wallet every five minutes', async () => {
+    poller.start()
+    await vi.runAllTicks()
+
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet')).toHaveLength(1)
+    expect(api.request.mock.calls.filter(([path]) => String(path).includes('status=processing,pending'))).toHaveLength(2)
+    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet/checkin')).toHaveLength(1)
+
+    await vi.advanceTimersByTimeAsync(285_000)
+    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet')).toHaveLength(2)
+  })
+
+  it('caches checkin status for the local day and refreshes after midnight', async () => {
+    vi.setSystemTime(new Date(2026, 6, 18, 23, 59, 40))
+    poller.start()
+    await vi.runAllTicks()
+
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet/checkin')).toHaveLength(1)
+
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet/checkin')).toHaveLength(2)
+  })
+
+  it('marks the current day checked in and refreshes wallet', async () => {
+    const updates: PollerState[] = []
+    poller.onUpdate((state) => updates.push(state))
+    await poller.refreshAll()
+
+    await poller.markCheckedIn()
+
+    expect(updates[updates.length - 1]).toEqual(expect.objectContaining({ checked_in: true }))
+    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet')).toHaveLength(2)
   })
 
   it('starts only one interval and can restart after stop', () => {
@@ -53,22 +248,23 @@ describe('DataPoller', () => {
       resolvers.push(resolve)
     }))
 
-    const first = poller.refresh()
-    const second = poller.refresh()
-    expect(api.request).toHaveBeenCalledTimes(2)
-    resolvers[0]({})
-    resolvers[1]({ tasks: [] })
+    const first = poller.refreshAll()
+    const second = poller.refreshAll()
+    expect(api.request).toHaveBeenCalledTimes(3)
+    resolvers[0](wallet)
+    resolvers[1]({ checked_in: false })
+    resolvers[2]({ tasks: [] })
     await Promise.all([first, second])
-    expect(api.request).toHaveBeenCalledTimes(2)
+    expect(api.request).toHaveBeenCalledTimes(3)
   })
 
   it('preserves data and reports offline network state', async () => {
     const callback = vi.fn()
     poller.onUpdate(callback)
-    await poller.refresh()
+    await poller.refreshAll()
     api.request.mockRejectedValue(new ApiError('网络连接失败，请检查网络后重试', 0))
 
-    await poller.refresh()
+    await poller.refreshAll()
 
     expect(callback).toHaveBeenLastCalledWith(expect.objectContaining({
       wallet: expect.objectContaining({ balance: 100 }),
@@ -83,41 +279,71 @@ describe('DataPoller', () => {
     api.request.mockRejectedValue(new ApiError('未登录', 401, 401))
     poller.start()
 
-    await poller.refresh()
-    await vi.runAllTicks()
+    await vi.advanceTimersByTimeAsync(0)
 
     expect(expired).toHaveBeenCalledOnce()
     expect(poller.isActive()).toBe(false)
   })
 
+  it('ignores stale responses after reset and establishes a new baseline', async () => {
+    let resolveTasks: ((value: unknown) => void) | undefined
+    api.request.mockImplementation((path: string) => {
+      if (path.includes('status=processing,pending')) {
+        return new Promise((resolve) => {
+          resolveTasks = resolve
+        })
+      }
+      return Promise.resolve(wallet)
+    })
+    const updates: PollerState[] = []
+    poller.onUpdate((state) => updates.push(state))
+    const staleRefresh = poller.refreshTasks()
+
+    poller.reset()
+    resolveTasks?.({ tasks: [{ id: 'old', status: 'processing' }] })
+    await staleRefresh
+
+    expect(updates[updates.length - 1]).toEqual({
+      wallet: null,
+      tasks: [],
+      checked_in: null,
+      task_event: null,
+      online: true,
+      error: null,
+    })
+
+    api.request.mockResolvedValue({ tasks: [] })
+    await poller.refreshTasks()
+    expect(api.request).not.toHaveBeenCalledWith('/api/v1/users/tasks/old')
+  })
+
   it('ignores a stale unauthorized response after stop and restart', async () => {
     const expired = vi.fn()
-    const resolvers: Array<{
-      resolve: (value: unknown) => void
-      reject: (error: unknown) => void
-    }> = []
-    api.request.mockImplementation(() => new Promise((resolve, reject) => {
-      resolvers.push({ resolve, reject })
-    }))
+    let rejectStale: ((error: unknown) => void) | undefined
+    api.request.mockImplementation((path: string) => {
+      if (path.includes('status=processing,pending') && !rejectStale) {
+        return new Promise((_, reject) => {
+          rejectStale = reject
+        })
+      }
+      if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
+      if (path === '/api/v1/users/wallet/checkin') return Promise.resolve({ checked_in: false })
+      return Promise.resolve({ tasks: [] })
+    })
     poller.onAuthExpired(expired)
     poller.start()
     poller.stop()
     poller.start()
 
-    resolvers[0].reject(new ApiError('未登录', 401, 401))
-    resolvers[1].reject(new ApiError('未登录', 401, 401))
+    rejectStale?.(new ApiError('未登录', 401, 401))
     await vi.runAllTicks()
 
     expect(expired).not.toHaveBeenCalled()
     expect(poller.isActive()).toBe(true)
-
-    resolvers[2].resolve({ balance: 1 })
-    resolvers[3].resolve({ tasks: [] })
-    await vi.runAllTicks()
   })
 
   it('clears account data when reset', async () => {
-    const updates: unknown[] = []
+    const updates: PollerState[] = []
     poller.onUpdate((state) => updates.push(state))
     poller.start()
     await vi.runAllTicks()
@@ -127,6 +353,8 @@ describe('DataPoller', () => {
     expect(updates[updates.length - 1]).toEqual({
       wallet: null,
       tasks: [],
+      checked_in: null,
+      task_event: null,
       online: true,
       error: null,
     })
