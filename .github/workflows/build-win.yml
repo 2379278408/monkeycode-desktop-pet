@@ -19,13 +19,23 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: Build Vite
-        run: npx vite build
+      - name: Type check
+        run: npm run typecheck
 
-      - name: Build Electron TypeScript
-        run: npx tsc -p tsconfig.electron.json
+      - name: Test
+        run: npm test
+
+      - name: Build application
+        run: npm run build:electron && npx vite build
+
+      - name: Verify packaged resources
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist/assets/monkey/idle.svg")) {
+            throw "Missing monkey SVG resource"
+          }
 
       - name: Build Electron (Windows)
         run: npx electron-builder --win --publish never

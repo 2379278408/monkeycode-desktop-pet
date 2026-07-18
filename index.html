@@ -2,9 +2,14 @@
 <html>
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'">
   <title>MonkeyCode Desktop Pet</title>
   <style>
     body { margin: 0; background: transparent; overflow: hidden; }
+    @keyframes monkey-float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-7px); }
+    }
   </style>
 </head>
 <body>

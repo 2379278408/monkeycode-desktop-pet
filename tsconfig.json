@@ -9,10 +9,10 @@
     "skipLibCheck": true,
     "outDir": "dist",
     "rootDir": ".",
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
-    }
+      "@/*": ["./src/*"]
+    },
+    "types": ["vite/client", "node"]
   },
   "include": ["src/**/*", "electron/**/*"]
 }

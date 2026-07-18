@@ -6,7 +6,8 @@ const statusIcons: Record<string, string> = {
 };
 
 function minutesAgo(timestamp: number): string {
-  const diff = Math.floor((Date.now() - timestamp) / 60000);
+  const timestampMs = timestamp < 10_000_000_000 ? timestamp * 1000 : timestamp;
+  const diff = Math.max(0, Math.floor((Date.now() - timestampMs) / 60000));
   if (diff < 1) return 'just now';
   if (diff < 60) return `${diff}m ago`;
   const hours = Math.floor(diff / 60);
@@ -17,7 +18,7 @@ function minutesAgo(timestamp: number): string {
 interface TaskItemProps {
   title: string;
   status: string;
-  createdAt: number;
+  createdAt?: number;
 }
 
 export function TaskItem({ title, status, createdAt }: TaskItemProps) {
@@ -36,7 +37,9 @@ export function TaskItem({ title, status, createdAt }: TaskItemProps) {
       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {title}
       </span>
-      <span style={{ color: '#999', fontSize: 11, flexShrink: 0 }}>{minutesAgo(createdAt)}</span>
+      <span style={{ color: '#999', fontSize: 11, flexShrink: 0 }}>
+        {createdAt === undefined ? '时间未知' : minutesAgo(createdAt)}
+      </span>
     </div>
   );
 }

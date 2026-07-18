@@ -1,78 +1,122 @@
-const API_BASE = 'https://monkeycode-ai.com'
+import { ApiError } from '../api/client'
+import type { ProjectTask, TaskList, Wallet } from '../api/types'
 
-interface Wallet {
-  balance: number
-  daily_token_balance: number
-  daily_token_limit: number
+interface PollingApi {
+  request<T>(path: string, init?: RequestInit): Promise<T>
 }
 
-interface Task {
-  id: string
-  title: string
-  status: string
-  created_at: number
-}
-
-interface PollerState {
+export interface PollerState {
   wallet: Wallet | null
-  tasks: Task[]
+  tasks: ProjectTask[]
+  online: boolean
+  error: string | null
 }
 
 export class DataPoller {
   private intervalId: ReturnType<typeof setInterval> | null = null
-  private callback: ((state: PollerState) => void) | null = null
-  private getSession: () => string | null
-  private state: PollerState = { wallet: null, tasks: [] }
-
-  constructor(getSession: () => string | null) {
-    this.getSession = getSession
+  private readonly updateCallbacks = new Set<(state: PollerState) => void>()
+  private readonly authExpiredCallbacks = new Set<() => void>()
+  private readonly api: PollingApi
+  private readonly intervalMs: number
+  private generation = 0
+  private inFlightGeneration: number | null = null
+  private state: PollerState = {
+    wallet: null,
+    tasks: [],
+    online: true,
+    error: null,
   }
 
-  onUpdate(callback: (state: PollerState) => void): void {
-    this.callback = callback
+  constructor(api: PollingApi, intervalMs = 30_000) {
+    this.api = api
+    this.intervalMs = intervalMs
+  }
+
+  onUpdate(callback: (state: PollerState) => void): () => void {
+    this.updateCallbacks.add(callback)
+    return () => this.updateCallbacks.delete(callback)
+  }
+
+  onAuthExpired(callback: () => void): () => void {
+    this.authExpiredCallbacks.add(callback)
+    return () => this.authExpiredCallbacks.delete(callback)
   }
 
   start(): void {
-    this.poll()
-    this.intervalId = setInterval(() => this.poll(), 30000)
+    if (this.intervalId) return
+    this.generation += 1
+    void this.refresh()
+    this.intervalId = setInterval(() => void this.refresh(), this.intervalMs)
   }
 
   stop(): void {
+    this.generation += 1
     if (this.intervalId) {
       clearInterval(this.intervalId)
       this.intervalId = null
     }
   }
 
+  reset(): void {
+    this.stop()
+    this.state = {
+      wallet: null,
+      tasks: [],
+      online: true,
+      error: null,
+    }
+    this.publish()
+  }
+
   isActive(): boolean {
     return this.intervalId !== null
   }
 
-  private async poll(): Promise<void> {
-    const session = this.getSession()
-    if (!session) return
-
-    const headers = { Cookie: `monkeycode_ai_session=${session}` }
+  async refresh(): Promise<void> {
+    const generation = this.generation
+    if (this.inFlightGeneration === generation) return
+    this.inFlightGeneration = generation
 
     try {
-      const [walletResp, tasksResp] = await Promise.all([
-        fetch(`${API_BASE}/api/v1/users/wallet`, { headers }),
-        fetch(`${API_BASE}/api/v1/users/tasks?status=processing,pending`, { headers }),
+      const [wallet, taskList] = await Promise.all([
+        this.api.request<Wallet>('/api/v1/users/wallet'),
+        this.api.request<TaskList>('/api/v1/users/tasks?status=processing,pending'),
       ])
-
-      if (walletResp.ok) {
-        const data = await walletResp.json()
-        this.state.wallet = data.data
+      if (generation !== this.generation) return
+      this.state = {
+        wallet,
+        tasks: taskList.tasks ?? [],
+        online: true,
+        error: null,
+      }
+      this.publish()
+    } catch (error) {
+      if (generation !== this.generation) return
+      if (error instanceof ApiError && error.isAuthError) {
+        this.stop()
+        for (const callback of this.authExpiredCallbacks) callback()
+        return
       }
 
-      if (tasksResp.ok) {
-        const data = await tasksResp.json()
-        this.state.tasks = data.data?.tasks || []
+      this.state = {
+        ...this.state,
+        online: !(error instanceof ApiError && error.httpStatus === 0),
+        error: error instanceof Error ? error.message : '数据更新失败',
       }
-
-      this.callback?.(this.state)
-    } catch {
-      // Silent retry on next interval
+      this.publish()
+    } finally {
+      if (this.inFlightGeneration === generation) {
+        this.inFlightGeneration = null
+      }
     }
+  }
+
+  private publish(): void {
+    const snapshot: PollerState = {
+      ...this.state,
+      tasks: [...this.state.tasks],
+      wallet: this.state.wallet ? { ...this.state.wallet } : null,
+    }
+    for (const callback of this.updateCallbacks) callback(snapshot)
   }
 }

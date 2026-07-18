@@ -1,12 +1,13 @@
-import { DotLottieReact as DotLottie } from '@lottiefiles/dotlottie-react';
 import { usePetStore, PetState } from '../stores/pet-store';
 
+const idleAnimation = `${import.meta.env.BASE_URL}assets/monkey/idle.svg`;
+
 const stateAnimations: Record<PetState, string> = {
-  [PetState.IDLE]: '/assets/monkey/idle.json',
-  [PetState.WORKING]: '/assets/monkey/idle.json',
-  [PetState.SUCCESS]: '/assets/monkey/idle.json',
-  [PetState.ERROR]: '/assets/monkey/idle.json',
-  [PetState.QUOTA_LOW]: '/assets/monkey/idle.json',
+  [PetState.IDLE]: idleAnimation,
+  [PetState.WORKING]: idleAnimation,
+  [PetState.SUCCESS]: idleAnimation,
+  [PetState.ERROR]: idleAnimation,
+  [PetState.QUOTA_LOW]: idleAnimation,
 };
 
 export function MonkeySprite() {
@@ -14,8 +15,20 @@ export function MonkeySprite() {
   const src = stateAnimations[petState];
 
   return (
-    <div style={{ cursor: 'pointer', width: 120, height: 120 }}>
-      <DotLottie src={src} loop autoplay style={{ width: 120, height: 120 }} />
+    <div
+      style={{
+        cursor: 'pointer',
+        width: 140,
+        height: 140,
+        animation: 'monkey-float 2.6s ease-in-out infinite',
+      }}
+    >
+      <img
+        src={src}
+        alt="MonkeyCode monkey"
+        draggable={false}
+        style={{ width: 140, height: 140, display: 'block' }}
+      />
     </div>
   );
 }

@@ -10,28 +10,38 @@ export enum PetState {
 
 export interface Task {
   id: string;
-  title: string;
-  status: 'processing' | 'pending' | 'finished' | 'error' | string;
-  created_at: number;
+  title?: string;
+  status?: 'processing' | 'pending' | 'finished' | 'error' | string;
+  created_at?: number;
 }
 
 export interface Wallet {
-  balance: number;
-  daily_token_balance: number;
-  daily_token_limit: number;
+  balance?: number;
+  daily_token_balance?: number;
+  daily_token_limit?: number;
 }
 
 export interface PetStoreState {
   wallet: Wallet | null;
   tasks: Task[];
   petState: PetState;
-  updateFromAPI: (data: { wallet?: Wallet; tasks?: Task[] }) => void;
+  online: boolean;
+  error: string | null;
+  updateFromAPI: (data: {
+    wallet?: Wallet | null;
+    tasks?: Task[];
+    online?: boolean;
+    error?: string | null;
+  }) => void;
+  reset: () => void;
 }
 
 export const usePetStore = create<PetStoreState>((set) => ({
   wallet: null,
   tasks: [],
   petState: PetState.IDLE,
+  online: true,
+  error: null,
 
   updateFromAPI: (data) => {
     const wallet = data.wallet ?? null;
@@ -51,12 +61,25 @@ export const usePetStore = create<PetStoreState>((set) => ({
       petState = PetState.SUCCESS;
     } else if (
       wallet &&
-      wallet.daily_token_limit > 0 &&
-      wallet.daily_token_balance / wallet.daily_token_limit < 0.1
+      (wallet.daily_token_limit ?? 0) > 0 &&
+      (wallet.daily_token_balance ?? 0) / (wallet.daily_token_limit ?? 1) < 0.1
     ) {
       petState = PetState.QUOTA_LOW;
     }
 
-    set({ wallet, tasks, petState });
+    set({
+      wallet,
+      tasks,
+      petState,
+      online: data.online ?? true,
+      error: data.error ?? null,
+    });
   },
+  reset: () => set({
+    wallet: null,
+    tasks: [],
+    petState: PetState.IDLE,
+    online: true,
+    error: null,
+  }),
 }));

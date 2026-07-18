@@ -2,12 +2,13 @@ import { useState } from 'react'
 
 interface LoginFormProps {
   onLoginSuccess: () => void
+  initialError?: string
 }
 
-export function LoginForm({ onLoginSuccess }: LoginFormProps) {
+export function LoginForm({ onLoginSuccess, initialError = '' }: LoginFormProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState(initialError)
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -20,10 +21,10 @@ export function LoginForm({ onLoginSuccess }: LoginFormProps) {
       if (result.success) {
         onLoginSuccess()
       } else {
-        setError(result.error || 'Login failed')
+        setError(result.error || '登录失败，请重试')
       }
-    } catch (err: any) {
-      setError(err.message)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : '登录失败，请重试')
     } finally {
       setLoading(false)
     }
@@ -55,7 +56,7 @@ export function LoginForm({ onLoginSuccess }: LoginFormProps) {
       <form onSubmit={handleSubmit}>
         <input
           type="email"
-          placeholder="Email"
+          placeholder="邮箱"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
@@ -74,7 +75,7 @@ export function LoginForm({ onLoginSuccess }: LoginFormProps) {
         />
         <input
           type="password"
-          placeholder="Password"
+          placeholder="密码"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
@@ -120,31 +121,10 @@ export function LoginForm({ onLoginSuccess }: LoginFormProps) {
             cursor: loading ? 'not-allowed' : 'pointer',
           }}
         >
-          {loading ? 'Logging in...' : 'Login'}
+          {loading ? '正在验证...' : '登录'}
         </button>
       </form>
 
-      <div
-        style={{
-          marginTop: 12,
-          textAlign: 'center',
-        }}
-      >
-        <a
-          href="#"
-          onClick={(e) => {
-            e.preventDefault()
-            window.electronAPI.openExternal('https://monkeycode-ai.com/register')
-          }}
-          style={{
-            color: '#818cf8',
-            fontSize: 11,
-            textDecoration: 'none',
-          }}
-        >
-          Don't have an account? Register
-        </a>
-      </div>
     </div>
   )
 }

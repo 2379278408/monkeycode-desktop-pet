@@ -3,14 +3,20 @@ import { MonkeySprite } from './MonkeySprite'
 import { BubbleCard } from './BubbleCard'
 import { usePetStore } from '../stores/pet-store'
 
-export function PetShell() {
+interface PetShellProps {
+  onLogout: () => void
+}
+
+export function PetShell({ onLogout }: PetShellProps) {
   const [showCard, setShowCard] = useState(false)
   const updateFromAPI = usePetStore((s) => s.updateFromAPI)
 
   useEffect(() => {
-    window.electronAPI.onStateUpdate((data) => {
+    const unsubscribe = window.electronAPI.onStateUpdate((data) => {
       updateFromAPI(data)
     })
+    void window.electronAPI.startPolling()
+    return unsubscribe
   }, [updateFromAPI])
 
   const handleMonkeyClick = useCallback(() => {
@@ -27,7 +33,7 @@ export function PetShell() {
         userSelect: 'none',
       }}
     >
-      {showCard && <BubbleCard />}
+      {showCard && <BubbleCard onLogout={onLogout} />}
       <div onClick={handleMonkeyClick}>
         <MonkeySprite />
       </div>

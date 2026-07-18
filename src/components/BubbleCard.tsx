@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { usePetStore } from '../stores/pet-store';
 import { TaskItem } from './TaskItem';
 
@@ -7,15 +8,43 @@ function formatTokens(n: number): string {
   return String(n);
 }
 
-export function BubbleCard() {
+interface BubbleCardProps {
+  onLogout: () => void;
+}
+
+export function BubbleCard({ onLogout }: BubbleCardProps) {
+  const [checkinState, setCheckinState] = useState<
+    { loading: boolean; message: string; success: boolean }
+  >({ loading: false, message: '', success: false });
   const wallet = usePetStore((s) => s.wallet);
   const tasks = usePetStore((s) => s.tasks);
+  const online = usePetStore((s) => s.online);
+  const error = usePetStore((s) => s.error);
 
-  const balance = wallet?.balance ?? 0;
+  const balance = (wallet?.balance ?? 0) / 1000;
   const dailyBalance = wallet?.daily_token_balance ?? 0;
   const dailyLimit = wallet?.daily_token_limit ?? 1;
   const quotaPercent = dailyLimit > 0 ? (dailyBalance / dailyLimit) * 100 : 0;
   const barColor = quotaPercent > 10 ? '#4caf50' : '#f44336';
+
+  const handleCheckin = async () => {
+    if (checkinState.loading) return;
+    setCheckinState({ loading: true, message: '', success: false });
+    try {
+      const result = await window.electronAPI.checkin();
+      setCheckinState({
+        loading: false,
+        message: result.success ? '签到成功' : result.error || '签到失败，请重试',
+        success: result.success,
+      });
+    } catch (error) {
+      setCheckinState({
+        loading: false,
+        message: error instanceof Error ? error.message : '签到失败，请重试',
+        success: false,
+      });
+    }
+  };
 
   return (
     <div
@@ -30,6 +59,12 @@ export function BubbleCard() {
       }}
     >
       <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 12 }}>MonkeyCode Status</div>
+
+      {(!online || error) && (
+        <div style={{ color: online ? '#c62828' : '#ef6c00', fontSize: 11, marginBottom: 10 }}>
+          {error || '当前离线，正在保留最近一次数据'}
+        </div>
+      )}
 
       <div style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
@@ -55,7 +90,12 @@ export function BubbleCard() {
         <div style={{ marginBottom: 12 }}>
           <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Active Tasks</div>
           {tasks.map((t) => (
-            <TaskItem key={t.id} title={t.title} status={t.status} createdAt={t.created_at} />
+            <TaskItem
+              key={t.id}
+              title={t.title ?? '未命名任务'}
+              status={t.status ?? 'unknown'}
+              createdAt={t.created_at}
+            />
           ))}
         </div>
       )}
@@ -77,7 +117,8 @@ export function BubbleCard() {
           Open MonkeyCode
         </button>
         <button
-          onClick={() => window.electronAPI.checkin()}
+          onClick={() => void handleCheckin()}
+          disabled={checkinState.loading}
           style={{
             flex: 1,
             padding: '8px 0',
@@ -86,12 +127,23 @@ export function BubbleCard() {
             background: '#fff',
             color: '#333',
             fontSize: 13,
-            cursor: 'pointer',
+            cursor: checkinState.loading ? 'wait' : 'pointer',
           }}
         >
-          Check-in
+          {checkinState.loading ? 'Checking...' : 'Check-in'}
         </button>
       </div>
+      {checkinState.message && (
+        <div style={{ marginTop: 6, fontSize: 11, color: checkinState.success ? '#2e7d32' : '#c62828' }}>
+          {checkinState.message}
+        </div>
+      )}
+      <button
+        onClick={onLogout}
+        style={{ width: '100%', marginTop: 8, padding: 6, border: 0, background: 'transparent', color: '#777', cursor: 'pointer' }}
+      >
+        退出登录
+      </button>
     </div>
   );
 }
