@@ -36,7 +36,7 @@
 - Produces: `PollerState.task_event: TaskTerminalEvent | null` 和 `PollerState.checked_in: boolean | null`。
 - Produces: `DataPoller.markCheckedIn()` 与 `DataPoller.refreshAll()`。
 
-- [ ] **Step 1: 添加任务终态和分频刷新失败测试**
+- [x] **Step 1: 添加任务终态和分频刷新失败测试**
 
 在 `data-poller.test.ts` 添加测试，使用 `vi.useFakeTimers()` 和可控 API mock 验证：
 
@@ -74,13 +74,13 @@ it('confirms a missing active task and emits finished once', async () => {
 
 同时覆盖 `error`、首次基线无事件、详情确认失败后重试、`reset()` 清空旧代际、钱包 5 分钟分频和签到跨天查询。
 
-- [ ] **Step 2: 运行 Poller 测试确认失败**
+- [x] **Step 2: 运行 Poller 测试确认失败**
 
 Run: `npx vitest run electron/poller/data-poller.test.ts`
 
 Expected: FAIL，缺少 `TaskTerminalEvent`、`refreshTasks()`、`refreshAll()` 或相关状态字段。
 
-- [ ] **Step 3: 实现任务跟踪与数据分频**
+- [x] **Step 3: 实现任务跟踪与数据分频**
 
 在 `electron/api/types.ts` 增加：
 
@@ -108,13 +108,13 @@ export interface TaskTerminalEvent {
 - `refreshAll()` 强制刷新钱包、签到和任务；定时器只按各自频率执行到期请求。
 - `reset()` 增加 generation、清空任务基线、签到日期和刷新时间戳。
 
-- [ ] **Step 4: 运行 Poller 测试确认通过**
+- [x] **Step 4: 运行 Poller 测试确认通过**
 
 Run: `npx vitest run electron/poller/data-poller.test.ts`
 
 Expected: PASS，任务终态、代际隔离、签到日期和分频刷新测试全部通过。
 
-- [ ] **Step 5: 提交任务监控实现**
+- [x] **Step 5: 提交任务监控实现**
 
 ```bash
 git add electron/api/types.ts electron/poller/data-poller.ts electron/poller/data-poller.test.ts
