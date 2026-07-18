@@ -269,17 +269,17 @@ git commit -m "feat: 支持桌宠拖动与透明穿透"
 - Consumes: `checkedIn`、`recentTaskEvent`、wallet 和最多 3 个活跃任务。
 - Produces: 环绕额度卡、任务卡和签到卡。
 
-- [ ] **Step 1: 添加签到缓存失败测试**
+- [x] **Step 1: 添加签到缓存失败测试**
 
 验证首次刷新调用 `GET /api/v1/users/wallet/checkin`，同日后续任务轮询不再调用；`markCheckedIn()` 立即设置 true；日期变化或 `refreshAll()` 重新查询；`reset()` 防止账号切换复用缓存。
 
-- [ ] **Step 2: 运行签到测试确认失败**
+- [x] **Step 2: 运行签到测试确认失败**
 
 Run: `npx vitest run electron/poller/data-poller.test.ts`
 
 Expected: FAIL，签到状态尚未按日期缓存。
 
-- [ ] **Step 3: 实现签到状态流**
+- [x] **Step 3: 实现签到状态流**
 
 签到前检查 Poller 当前 `checked_in`。已签到时直接返回：
 
@@ -289,17 +289,17 @@ Expected: FAIL，签到状态尚未按日期缓存。
 
 签到成功后调用 `markCheckedIn()` 和钱包强制刷新。失败返回明确 message，Renderer 将成功、已签到和失败显示为独立视觉状态。
 
-- [ ] **Step 4: 实现 C 方案环绕状态卡**
+- [x] **Step 4: 实现 C 方案环绕状态卡**
 
 `OrbitStatusPanel` 以猴子为中心布置三张卡：额度卡位于左上、任务卡位于右上、签到卡位于下方。任务卡显示最多 3 个活跃任务和最近一次终态；签到卡在已签到时禁用按钮并显示“今日已签到”。所有按钮添加 `data-window-interactive`、`aria-label` 和键盘 focus 样式。
 
-- [ ] **Step 5: 运行 Poller 与完整组件类型检查**
+- [x] **Step 5: 运行 Poller 与完整组件类型检查**
 
 Run: `npx vitest run electron/poller/data-poller.test.ts && npm run typecheck`
 
 Expected: PASS，签到缓存测试和 TypeScript 检查通过。
 
-- [ ] **Step 6: 提交环绕卡和签到反馈**
+- [x] **Step 6: 提交环绕卡和签到反馈**
 
 ```bash
 git add electron/main.ts electron/poller src/components
