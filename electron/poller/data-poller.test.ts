@@ -16,7 +16,10 @@ describe('DataPoller', () => {
     api.request.mockImplementation((path: string) => {
       if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
       if (path === '/api/v1/users/wallet/checkin') return Promise.resolve({ checked_in: false })
-      return Promise.resolve({ tasks: [{ id: 't1', title: 'Task', status: 'processing' }] })
+      if (path === '/api/v1/users/tasks?status=processing,pending') {
+        return Promise.resolve({ tasks: [{ id: 't1', title: 'Task', status: 'processing' }] })
+      }
+      throw new Error(`Unexpected path: ${path}`)
     })
     poller = new DataPoller(api, { taskIntervalMs: 15_000, walletIntervalMs: 300_000 })
   })
@@ -40,6 +43,59 @@ describe('DataPoller', () => {
       online: true,
       error: null,
     }))
+  })
+
+  it('isolates update callbacks and gives each callback a deep snapshot', async () => {
+    let activeRequestCount = 0
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
+      if (path === '/api/v1/users/wallet/checkin') return Promise.resolve({ checked_in: false })
+      if (path === '/api/v1/users/tasks?status=processing,pending') {
+        activeRequestCount += 1
+        return Promise.resolve(activeRequestCount === 1
+          ? { tasks: [{ id: 't1', title: 'Task', status: 'processing' }] }
+          : { tasks: [] })
+      }
+      if (path === '/api/v1/users/tasks/t1') {
+        return Promise.resolve({ id: 't1', title: 'Task', status: 'finished' })
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+    const updates: PollerState[] = []
+    poller.onUpdate((state) => {
+      if (state.wallet) state.wallet.balance = -1
+      if (state.tasks[0]) state.tasks[0].title = 'mutated task'
+      if (state.task_event) state.task_event.title = 'mutated event'
+      throw new Error('subscriber failed')
+    })
+    poller.onUpdate((state) => updates.push(state))
+
+    await poller.refreshAll()
+    await poller.refreshTasks()
+
+    expect(updates[0].wallet?.balance).toBe(100)
+    expect(updates[0].tasks[0].title).toBe('Task')
+    expect(updates[1].task_event?.title).toBe('Task')
+  })
+
+  it('isolates auth expiry callbacks', async () => {
+    const notified = vi.fn()
+    poller.onAuthExpired(() => {
+      throw new Error('subscriber failed')
+    })
+    poller.onAuthExpired(notified)
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/wallet'
+        || path === '/api/v1/users/wallet/checkin'
+        || path === '/api/v1/users/tasks?status=processing,pending') {
+        return Promise.reject(new ApiError('未登录', 401, 401))
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    await poller.refreshAll()
+
+    expect(notified).toHaveBeenCalledOnce()
   })
 
   it('uses the first active task response only as a baseline', async () => {
@@ -95,7 +151,7 @@ describe('DataPoller', () => {
       if (path === '/api/v1/users/tasks/t1') {
         return Promise.resolve({ id: 't1', title: 'Failed task', status: 'error' })
       }
-      return Promise.resolve({ checked_in: false })
+      throw new Error(`Unexpected path: ${path}`)
     })
     const updates: PollerState[] = []
     poller.onUpdate((state) => updates.push(state))
@@ -219,6 +275,44 @@ describe('DataPoller', () => {
     ])
   })
 
+  it('tracks three new active tasks while older terminal confirmations retry', async () => {
+    let activeRequestCount = 0
+    const oldIds = ['old1', 'old2', 'old3']
+    const newIds = ['new1', 'new2', 'new3']
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/tasks?status=processing,pending') {
+        activeRequestCount += 1
+        if (activeRequestCount === 1) {
+          return Promise.resolve({ tasks: oldIds.map((id) => ({ id, status: 'processing' })) })
+        }
+        if (activeRequestCount === 2) {
+          return Promise.resolve({ tasks: newIds.map((id) => ({ id, status: 'processing' })) })
+        }
+        return Promise.resolve({ tasks: [] })
+      }
+      if (oldIds.some((id) => path === `/api/v1/users/tasks/${id}`)) {
+        return Promise.reject(new Error('detail unavailable'))
+      }
+      const newId = newIds.find((id) => path === `/api/v1/users/tasks/${id}`)
+      if (newId) return Promise.resolve({ id: newId, status: 'finished' })
+      if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
+      throw new Error(`Unexpected path: ${path}`)
+    })
+    const updates: PollerState[] = []
+    poller.onUpdate((state) => updates.push(state))
+
+    await poller.refreshTasks()
+    await poller.refreshTasks()
+    await poller.refreshTasks()
+
+    expect(updates[1].tasks.map((task) => task.id)).toEqual(newIds)
+    expect(updates.flatMap((state) => state.task_event ? [state.task_event.task_id] : []))
+      .toEqual(newIds)
+    for (const id of newIds) {
+      expect(api.request).toHaveBeenCalledWith(`/api/v1/users/tasks/${id}`)
+    }
+  })
+
   it('refreshes tasks every 15 seconds and wallet every five minutes', async () => {
     poller.start()
     await vi.runAllTicks()
@@ -249,7 +343,7 @@ describe('DataPoller', () => {
     poller.onUpdate((state) => updates.push(state))
     await poller.refreshAll()
 
-    await poller.markCheckedIn()
+    await poller.markCheckedIn(poller.captureGeneration())
 
     expect(updates[updates.length - 1]).toEqual(expect.objectContaining({ checked_in: true }))
     expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet')).toHaveLength(2)
@@ -303,13 +397,17 @@ describe('DataPoller', () => {
           resolveCheckin = resolve
         })
       }
-      return Promise.resolve({ tasks: [] })
+      if (path === '/api/v1/users/tasks?status=processing,pending') {
+        return Promise.resolve({ tasks: [] })
+      }
+      throw new Error(`Unexpected path: ${path}`)
     })
     const updates: PollerState[] = []
     poller.onUpdate((state) => updates.push(state))
 
+    const generation = poller.captureGeneration()
     const refreshAll = poller.refreshAll()
-    const markCheckedIn = poller.markCheckedIn()
+    const markCheckedIn = poller.markCheckedIn(generation)
     resolveCheckin?.({ checked_in: false })
     await Promise.all([refreshAll, markCheckedIn])
 
@@ -333,7 +431,10 @@ describe('DataPoller', () => {
         }
         return Promise.resolve({ checked_in: true })
       }
-      return Promise.resolve({ tasks: [] })
+      if (path === '/api/v1/users/tasks?status=processing,pending') {
+        return Promise.resolve({ tasks: [] })
+      }
+      throw new Error(`Unexpected path: ${path}`)
     })
     const updates: PollerState[] = []
     poller.onUpdate((state) => updates.push(state))
@@ -348,11 +449,37 @@ describe('DataPoller', () => {
     expect(updates[updates.length - 1].checked_in).toBe(true)
   })
 
+  it('rejects a checked-in result captured before reset', async () => {
+    const generation = poller.captureGeneration()
+    const updates: PollerState[] = []
+    poller.onUpdate((state) => updates.push(state))
+    let resolveCheckin: (() => void) | undefined
+    const checkinRequest = new Promise<void>((resolve) => {
+      resolveCheckin = resolve
+    })
+
+    poller.reset()
+    resolveCheckin?.()
+    await checkinRequest
+    const applied = await poller.markCheckedIn(generation)
+
+    expect(applied).toBe(false)
+    expect(api.request).not.toHaveBeenCalled()
+    expect(updates[updates.length - 1].checked_in).toBeNull()
+  })
+
   it('preserves data and reports offline network state', async () => {
     const callback = vi.fn()
     poller.onUpdate(callback)
     await poller.refreshAll()
-    api.request.mockRejectedValue(new ApiError('网络连接失败，请检查网络后重试', 0))
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/wallet'
+        || path === '/api/v1/users/wallet/checkin'
+        || path === '/api/v1/users/tasks?status=processing,pending') {
+        return Promise.reject(new ApiError('网络连接失败，请检查网络后重试', 0))
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
 
     await poller.refreshAll()
 
@@ -366,7 +493,14 @@ describe('DataPoller', () => {
   it('stops and publishes auth expiry on unauthorized response', async () => {
     const expired = vi.fn()
     poller.onAuthExpired(expired)
-    api.request.mockRejectedValue(new ApiError('未登录', 401, 401))
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/wallet'
+        || path === '/api/v1/users/wallet/checkin'
+        || path === '/api/v1/users/tasks?status=processing,pending') {
+        return Promise.reject(new ApiError('未登录', 401, 401))
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
     poller.start()
 
     await vi.advanceTimersByTimeAsync(0)
@@ -383,7 +517,9 @@ describe('DataPoller', () => {
           resolveTasks = resolve
         })
       }
-      return Promise.resolve(wallet)
+      if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
+      if (path === '/api/v1/users/wallet/checkin') return Promise.resolve({ checked_in: false })
+      throw new Error(`Unexpected path: ${path}`)
     })
     const updates: PollerState[] = []
     poller.onUpdate((state) => updates.push(state))
@@ -402,7 +538,10 @@ describe('DataPoller', () => {
       error: null,
     })
 
-    api.request.mockResolvedValue({ tasks: [] })
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/tasks?status=processing,pending') return Promise.resolve({ tasks: [] })
+      throw new Error(`Unexpected path: ${path}`)
+    })
     await poller.refreshTasks()
     expect(api.request).not.toHaveBeenCalledWith('/api/v1/users/tasks/old')
   })
@@ -415,7 +554,9 @@ describe('DataPoller', () => {
           resolveTasks = resolve
         })
       }
-      return Promise.resolve(wallet)
+      if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
+      if (path === '/api/v1/users/wallet/checkin') return Promise.resolve({ checked_in: false })
+      throw new Error(`Unexpected path: ${path}`)
     })
     const inFlight = poller.refreshTasks()
     const queued = poller.refreshAll()
@@ -534,7 +675,10 @@ describe('DataPoller', () => {
       }
       if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
       if (path === '/api/v1/users/wallet/checkin') return Promise.resolve({ checked_in: false })
-      return Promise.resolve({ tasks: [] })
+      if (path === '/api/v1/users/tasks?status=processing,pending') {
+        return Promise.resolve({ tasks: [] })
+      }
+      throw new Error(`Unexpected path: ${path}`)
     })
     poller.onAuthExpired(expired)
     poller.start()

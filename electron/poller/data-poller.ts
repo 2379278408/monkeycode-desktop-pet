@@ -72,7 +72,8 @@ export class DataPoller {
   private generation = 0
   private refreshQueue: RefreshQueue | null = null
   private hasTaskBaseline = false
-  private trackedActiveTasks = new Map<string, ProjectTask>()
+  private activeTasks = new Map<string, ProjectTask>()
+  private pendingTerminalTasks = new Map<string, ProjectTask>()
   private checkinCacheGeneration: number | null = null
   private checkinCacheDate: string | null = null
   private checkinMutationVersion = 0
@@ -150,7 +151,12 @@ export class DataPoller {
     return this.runRefresh({ tasks: true, wallet: true, checkin: true })
   }
 
-  async markCheckedIn(): Promise<void> {
+  captureGeneration(): number {
+    return this.generation
+  }
+
+  async markCheckedIn(expectedGeneration: number): Promise<boolean> {
+    if (expectedGeneration !== this.generation) return false
     this.checkinMutationVersion += 1
     this.checkinCacheGeneration = this.generation
     this.checkinCacheDate = localDate()
@@ -159,6 +165,7 @@ export class DataPoller {
     this.state = { ...this.state, checked_in: true, task_event: null }
     this.publish()
     await this.runRefresh({ wallet: true })
+    return true
   }
 
   private refreshScheduled(): Promise<void> {
@@ -318,16 +325,21 @@ export class DataPoller {
     generation: number,
   ): Promise<{ tasks: ProjectTask[]; events: TaskTerminalEvent[]; errors: unknown[] }> {
     const tasks = (taskList.tasks ?? []).slice(0, MAX_TRACKED_TASKS)
+    const currentActiveTasks = new Map(tasks.map((task) => [task.id, task]))
     if (!this.hasTaskBaseline) {
       this.hasTaskBaseline = true
-      this.trackedActiveTasks = new Map(tasks.map((task) => [task.id, task]))
+      this.activeTasks = currentActiveTasks
+      this.pendingTerminalTasks.clear()
       return { tasks, events: [], errors: [] }
     }
 
-    const activeIds = new Set(tasks.map((task) => task.id))
-    const missingTasks = [...this.trackedActiveTasks.values()]
-      .filter((task) => !activeIds.has(task.id))
-    const detailResults = await Promise.all(missingTasks.map(async (task) => ({
+    const pendingTasks = new Map(this.pendingTerminalTasks)
+    for (const task of this.activeTasks.values()) {
+      if (!currentActiveTasks.has(task.id)) pendingTasks.set(task.id, task)
+    }
+    for (const taskId of currentActiveTasks.keys()) pendingTasks.delete(taskId)
+
+    const detailResults = await Promise.all([...pendingTasks.values()].map(async (task) => ({
       task,
       result: await settle(this.api.request<ProjectTask>(
         `/api/v1/users/tasks/${encodeURIComponent(task.id)}`,
@@ -356,29 +368,32 @@ export class DataPoller {
       }
     }
 
-    const trackedTasks = new Map<string, ProjectTask>()
+    const retainedPendingTasks = new Map<string, ProjectTask>()
     for (const task of retainedTasks) {
-      if (trackedTasks.size >= MAX_TRACKED_TASKS) break
-      trackedTasks.set(task.id, task)
+      retainedPendingTasks.set(task.id, task)
     }
-    for (const task of tasks) {
-      if (trackedTasks.size >= MAX_TRACKED_TASKS) break
-      trackedTasks.set(task.id, task)
-    }
-    this.trackedActiveTasks = trackedTasks
+    this.activeTasks = currentActiveTasks
+    this.pendingTerminalTasks = retainedPendingTasks
     return { tasks, events, errors }
   }
 
   private expireAuthIfNeeded(errors: unknown[]): boolean {
     if (!errors.some((error) => error instanceof ApiError && error.isAuthError)) return false
     this.stop()
-    for (const callback of this.authExpiredCallbacks) callback()
+    for (const callback of this.authExpiredCallbacks) {
+      try {
+        callback()
+      } catch {
+        // Isolate subscribers without exposing authentication details.
+      }
+    }
     return true
   }
 
   private clearGenerationCaches(): void {
     this.hasTaskBaseline = false
-    this.trackedActiveTasks.clear()
+    this.activeTasks.clear()
+    this.pendingTerminalTasks.clear()
     this.checkinCacheGeneration = null
     this.checkinCacheDate = null
     this.checkinMutationVersion += 1
@@ -388,12 +403,18 @@ export class DataPoller {
   }
 
   private publish(taskEvent: TaskTerminalEvent | null = null): void {
-    const snapshot: PollerState = {
-      ...this.state,
-      task_event: taskEvent,
-      tasks: [...this.state.tasks],
-      wallet: this.state.wallet ? { ...this.state.wallet } : null,
+    for (const callback of this.updateCallbacks) {
+      const snapshot: PollerState = {
+        ...this.state,
+        task_event: taskEvent ? { ...taskEvent } : null,
+        tasks: this.state.tasks.map((task) => ({ ...task })),
+        wallet: this.state.wallet ? { ...this.state.wallet } : null,
+      }
+      try {
+        callback(snapshot)
+      } catch {
+        // Isolate subscribers without exposing state contents.
+      }
     }
-    for (const callback of this.updateCallbacks) callback(snapshot)
   }
 }
