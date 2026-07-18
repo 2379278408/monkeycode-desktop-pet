@@ -12,9 +12,22 @@ export interface PetLifeSnapshot {
 
 const clampLifeValue = (value: number): number => Math.min(100, Math.max(0, value))
 const MAX_SNAPSHOT_FILE_SIZE = 16 * 1024
+const MAX_FUTURE_OFFSET_MS = 24 * 60 * 60_000
+const LOAD_ERROR_MESSAGE = '桌宠生命状态读取失败'
+
+class PetLifeLoadError extends Error {
+  constructor() {
+    super(LOAD_ERROR_MESSAGE)
+    this.name = 'PetLifeLoadError'
+  }
+}
 
 function isSafeIntegerTimestamp(value: unknown): value is number {
-  return typeof value === 'number' && Number.isSafeInteger(value)
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return false
+  const wallNow = Date.now()
+  const safeWallNow = Number.isSafeInteger(wallNow) && wallNow >= 0 ? wallNow : 0
+  const latestAllowed = Math.min(Number.MAX_SAFE_INTEGER, safeWallNow + MAX_FUTURE_OFFSET_MS)
+  return value <= latestAllowed
 }
 
 export function normalizePetLifeSnapshot(value: unknown): PetLifeSnapshot | null {
@@ -42,8 +55,8 @@ export function normalizePetLifeSnapshot(value: unknown): PetLifeSnapshot | null
     satiety: clampLifeValue(candidate.satiety!),
     energy: clampLifeValue(candidate.energy!),
     sleeping: candidate.sleeping,
-    lastCalculatedAt: Math.max(0, candidate.lastCalculatedAt),
-    lastInteractionAt: Math.max(0, candidate.lastInteractionAt),
+    lastCalculatedAt: candidate.lastCalculatedAt,
+    lastInteractionAt: candidate.lastInteractionAt,
   }
 }
 
@@ -53,20 +66,31 @@ function safeReadError(error: unknown): string {
   return 'UnknownError: 文件读取失败'
 }
 
+function throwLoadError(diagnostic: string): never {
+  console.warn('[PetLife] 无法读取生命状态', diagnostic)
+  throw new PetLifeLoadError()
+}
+
 export class PetLifeStore {
   constructor(private readonly filePath: string) {}
 
   load(): PetLifeSnapshot | null {
     try {
-      if (!fs.existsSync(this.filePath)) return null
       if (fs.statSync(this.filePath).size > MAX_SNAPSHOT_FILE_SIZE) {
-        console.warn('[PetLife] 无法读取生命状态', 'FileTooLargeError: 文件过大')
+        throwLoadError('FileTooLargeError: 文件过大')
+      }
+      const normalized = normalizePetLifeSnapshot(
+        JSON.parse(fs.readFileSync(this.filePath, 'utf8')),
+      )
+      if (!normalized) throwLoadError('InvalidSnapshotError: 数据格式无效')
+      return normalized
+    } catch (error) {
+      if (error instanceof PetLifeLoadError) throw error
+      if (error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
         return null
       }
-      return normalizePetLifeSnapshot(JSON.parse(fs.readFileSync(this.filePath, 'utf8')))
-    } catch (error) {
       console.warn('[PetLife] 无法读取生命状态', safeReadError(error))
-      return null
+      throw new PetLifeLoadError()
     }
   }
 

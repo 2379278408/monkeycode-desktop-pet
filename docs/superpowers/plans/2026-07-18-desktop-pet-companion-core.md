@@ -548,7 +548,7 @@ git commit -m "feat: 支持桌宠点击双击与抚摸"
 - Consumes: `PetForm`、生命事件、现有 `PetState` 业务状态。
 - Produces: `PetAction`、`selectPetAction(inputs)`、`usePetLifeStore` 的 `hydrate`、`interact`、`feed`、`sleep`、`wake` 和 `tick`。
 
-- [ ] **Step 1: 添加动作优先级失败测试**
+- [x] **Step 1: 添加动作优先级失败测试**
 
 创建 `src/lib/pet-action.test.ts`：
 
@@ -569,13 +569,13 @@ it('returns to the current base form after temporary actions', () => {
 
 创建 `src/stores/pet-life-store.test.ts`，mock `window.electronAPI`，验证 hydrate 后离线结算、喂食增加 25、睡眠切换和保存调用。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run src/lib/pet-action.test.ts src/stores/pet-life-store.test.ts`
 
 Expected: FAIL，提示模块不存在。
 
-- [ ] **Step 3: 实现动作选择器**
+- [x] **Step 3: 实现动作选择器**
 
 在 `src/lib/pet-action.ts` 定义：
 
@@ -589,21 +589,21 @@ export type PetAction =
 
 `selectPetAction` 严格按设计优先级返回第一个非空输入，并将现有 SUCCESS、ERROR、QUOTA_LOW 映射为业务动作。
 
-- [ ] **Step 4: 实现 Zustand 生命 store**
+- [x] **Step 4: 实现 Zustand 生命 store**
 
 `usePetLifeStore` 初始值为 50/50/50；`hydrate` 调用 `loadPetLife` 后结算；`interact`、`feed`、`sleep`、`wake` 和 `tick` 先结算再应用事件。每次变化调用 `savePetLife`，保存失败只设置一次非阻塞 `persistenceError`。点击和双击按设计的 10 分钟窗口限频，抚摸单次收益上限为 5。
 
-- [ ] **Step 5: 连接业务状态**
+- [x] **Step 5: 连接业务状态**
 
 保留 `src/stores/pet-store.ts` 的 8 秒任务终态计时。向 PetShell 暴露业务 `PetState`，由 `selectPetAction` 与生命 form 合并；业务 store 不直接修改生命快照。
 
-- [ ] **Step 6: 运行 store 与全量验证**
+- [x] **Step 6: 运行 store 与全量验证**
 
 Run: `npx vitest run src/lib/pet-action.test.ts src/stores/pet-life-store.test.ts src/stores/pet-store.test.ts && npm run verify`
 
 Expected: 所有测试和构建通过。
 
-- [ ] **Step 7: 提交动作与 store**
+- [x] **Step 7: 提交动作与 store**
 
 ```bash
 git add src/lib/pet-action.ts src/lib/pet-action.test.ts src/stores/pet-life-store.ts src/stores/pet-life-store.test.ts src/stores/pet-store.ts
