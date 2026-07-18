@@ -28,7 +28,7 @@ jobs:
         run: npm test
 
       - name: Build application
-        run: npm run build:electron && npx vite build
+        run: npm run build:electron && npm run verify:bundle && npx vite build
 
       - name: Verify packaged resources
         shell: pwsh
