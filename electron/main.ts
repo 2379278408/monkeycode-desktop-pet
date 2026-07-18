@@ -2,9 +2,9 @@ import { app, BrowserWindow, ipcMain, screen, shell, type IpcMainInvokeEvent } f
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { ApiClient } from './api/client'
-import type { Wallet } from './api/types'
 import { CaptchaClient } from './auth/captcha-client'
 import { AuthManager } from './auth/manager'
+import { CheckinCoordinator } from './checkin/coordinator'
 import { DataPoller } from './poller/data-poller'
 import { TrayManager } from './tray/manager'
 import {
@@ -20,7 +20,6 @@ import {
 const MAX_POINTER_COORDINATE = 1_000_000
 const DRAG_SESSION_TIMEOUT_MS = 60_000
 const WINDOW_MOVE_THROTTLE_MS = 6
-const CHECKIN_COOLDOWN_MS = 10_000
 
 let petWindow: BrowserWindow | null = null
 let authManager: AuthManager
@@ -36,8 +35,7 @@ let dragSession: {
   lastWindowMoveAt: number
   pendingBounds: Rectangle | null
 } | null = null
-let checkinPromise: Promise<{ success: boolean; error?: string }> | null = null
-let lastCheckinCompletedAt = 0
+let checkinCoordinator: CheckinCoordinator
 
 function getProductionRendererUrl(): URL {
   return new URL(pathToFileURL(path.join(__dirname, '../dist/index.html')).toString())
@@ -240,6 +238,17 @@ function registerIPC(): void {
   captchaClient = new CaptchaClient()
   authManager = new AuthManager({ captcha: captchaClient })
   dataApi = new ApiClient({ getSession: () => authManager.getSession() })
+  checkinCoordinator = new CheckinCoordinator({
+    getPoller: ensureDataPoller,
+    getSession: () => authManager.getSession(),
+    obtainCaptchaToken: () => captchaClient.obtainToken(),
+    submitCheckin: async (captchaToken) => {
+      await dataApi.request('/api/v1/users/wallet/checkin', {
+        method: 'POST',
+        body: JSON.stringify({ captcha_token: captchaToken }),
+      })
+    },
+  })
 
   ipcMain.handle('auth:check-session', async (event) => {
     assertTrustedSender(event)
@@ -283,37 +292,7 @@ function registerIPC(): void {
 
   ipcMain.handle('wallet:checkin', (event) => {
     assertTrustedSender(event)
-    if (checkinPromise) return checkinPromise
-    if (Date.now() - lastCheckinCompletedAt < CHECKIN_COOLDOWN_MS) {
-      return Promise.resolve({ success: false, error: '操作过于频繁，请稍后重试' })
-    }
-    const request = (async (): Promise<{ success: boolean; error?: string }> => {
-      try {
-        const session = authManager.getSession()
-        if (!session) throw new Error('登录状态已失效，请重新登录')
-        const captchaToken = await captchaClient.obtainToken()
-        if (authManager.getSession() !== session) {
-          throw new Error('登录状态已变更，请重新签到')
-        }
-        await dataApi.request<Wallet>('/api/v1/users/wallet/checkin', {
-          method: 'POST',
-          body: JSON.stringify({ captcha_token: captchaToken }),
-        })
-        await ensureDataPoller().refresh()
-        return { success: true }
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : '签到失败，请重试',
-        }
-      }
-    })()
-    checkinPromise = request
-    void request.finally(() => {
-      lastCheckinCompletedAt = Date.now()
-      if (checkinPromise === request) checkinPromise = null
-    })
-    return request
+    return checkinCoordinator.checkin()
   })
 
   ipcMain.handle('open-external', async (_event, rawUrl: string) => {

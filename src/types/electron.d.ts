@@ -50,7 +50,12 @@ export interface ElectronAPI {
   setMousePassthrough: (enabled: boolean) => Promise<void>
   setWindowMode: (mode: WindowMode) => Promise<void>
   openExternal: (url: string) => Promise<void>
-  checkin: () => Promise<{ success: boolean; error?: string }>
+  checkin: () => Promise<{
+    success: boolean
+    already_checked_in?: boolean
+    message: string
+    error?: string
+  }>
 }
 
 declare global {

@@ -182,7 +182,7 @@ export default function App() {
         background: 'transparent',
       }}
     >
-      <PetShell onLogout={() => void handleLogout()} />
+      <PetShell onLogout={handleLogout} />
     </div>
   )
 }

@@ -460,6 +460,24 @@ describe('DataPoller', () => {
     expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet')).toHaveLength(2)
   })
 
+  it('reports whether the current login generation has checked in', async () => {
+    expect(poller.isCheckedIn()).toBe(false)
+
+    await poller.refreshAll()
+    await poller.markCheckedIn(poller.captureGeneration())
+    expect(poller.isCheckedIn()).toBe(true)
+
+    vi.setSystemTime(new Date(2026, 6, 19, 0, 0, 1))
+    expect(poller.isCheckedIn()).toBe(false)
+
+    vi.setSystemTime(new Date(2026, 6, 18, 12))
+    poller.start()
+    expect(poller.isCheckedIn()).toBe(false)
+
+    poller.reset()
+    expect(poller.isCheckedIn()).toBe(false)
+  })
+
   it('starts only one interval and can restart after stop', () => {
     poller.start()
     poller.start()
@@ -577,6 +595,26 @@ describe('DataPoller', () => {
     expect(applied).toBe(false)
     expect(api.request).not.toHaveBeenCalled()
     expect(updates[updates.length - 1].checked_in).toBeNull()
+  })
+
+  it('rejects a checked-in result when reset occurs during wallet refresh', async () => {
+    let resolveWallet: ((value: unknown) => void) | undefined
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/wallet') {
+        return new Promise((resolve) => {
+          resolveWallet = resolve
+        })
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+    const generation = poller.captureGeneration()
+
+    const markCheckedIn = poller.markCheckedIn(generation)
+    poller.reset()
+    resolveWallet?.(wallet)
+
+    await expect(markCheckedIn).resolves.toBe(false)
+    expect(poller.isCheckedIn()).toBe(false)
   })
 
   it('preserves data and reports offline network state', async () => {

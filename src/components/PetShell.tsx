@@ -6,12 +6,12 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react'
 import { MonkeySprite } from './MonkeySprite'
-import { BubbleCard } from './BubbleCard'
+import { OrbitStatusPanel } from './OrbitStatusPanel'
 import { usePetStore } from '../stores/pet-store'
 import { classifyGesture } from '../lib/pointer-gesture'
 
 interface PetShellProps {
-  onLogout: () => void
+  onLogout: () => Promise<void>
 }
 
 interface PointerSession {
@@ -238,24 +238,17 @@ export function PetShell({ onLogout }: PetShellProps) {
     }
   }
 
-  const handlePointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const session = pointerSessionRef.current
-    if (!session || session.pointerId !== event.pointerId) return
-    pointerSessionRef.current = null
-    releasePointer(event)
-
-    if (session.dragging) {
-      finishDrag(session, event.screenX, event.screenY)
-      return
-    }
-
+  const toggleCard = useCallback((pointerScreenPosition?: ScreenPoint) => {
     const nextShowCard = !showCard
-    const pointerScreenPosition = { x: event.screenX, y: event.screenY }
     const generation = modeGenerationRef.current + 1
     modeGenerationRef.current = generation
     modeTransitionRef.current = true
 
     const restoreAfterModeChange = () => {
+      if (!pointerScreenPosition) {
+        setMousePassthrough(false)
+        return
+      }
       const clientX = pointerScreenPosition.x - window.screenX
       const clientY = pointerScreenPosition.y - window.screenY
       restorePassthroughAt(clientX, clientY)
@@ -280,7 +273,21 @@ export function PetShell({ onLogout }: PetShellProps) {
       }
     }
     void changeMode()
-  }, [finishDrag, passthroughController, restorePassthroughAt, showCard])
+  }, [passthroughController, restorePassthroughAt, setMousePassthrough, showCard])
+
+  const handlePointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const session = pointerSessionRef.current
+    if (!session || session.pointerId !== event.pointerId) return
+    pointerSessionRef.current = null
+    releasePointer(event)
+
+    if (session.dragging) {
+      finishDrag(session, event.screenX, event.screenY)
+      return
+    }
+
+    toggleCard({ x: event.screenX, y: event.screenY })
+  }, [finishDrag, toggleCard])
 
   const cancelPointerSession = useCallback((
     event: ReactPointerEvent<HTMLDivElement>,
@@ -315,29 +322,33 @@ export function PetShell({ onLogout }: PetShellProps) {
         userSelect: 'none',
       }}
     >
-      {showCard && (
-        <div
-          data-window-interactive
-          style={{
-            position: 'absolute',
-            left: '50%',
-            bottom: 140,
-            maxHeight: 'calc(100vh - 140px)',
-            overflowY: 'auto',
-            borderRadius: 12,
-            transform: 'translateX(-50%)',
-          }}
-        >
-          <BubbleCard onLogout={onLogout} />
-        </div>
-      )}
+      <style>{`
+        .pet-monkey-control:focus-visible {
+          outline: none;
+          box-shadow: inset 0 0 0 3px rgba(79, 124, 255, 0.48);
+          border-radius: 32px;
+        }
+      `}</style>
+      {showCard && <OrbitStatusPanel onLogout={onLogout} />}
       <div
+        className="pet-monkey-control"
         data-window-interactive
+        role="button"
+        tabIndex={0}
+        aria-label={showCard ? '收起 MonkeyCode 状态面板' : '展开 MonkeyCode 状态面板'}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
         onLostPointerCapture={handleLostPointerCapture}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          if (event.repeat) return
+          event.preventDefault()
+          if (!pointerSessionRef.current && !draggingRef.current && !modeTransitionRef.current) {
+            toggleCard()
+          }
+        }}
         style={{
           position: 'absolute',
           left: '50%',

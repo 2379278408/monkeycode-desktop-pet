@@ -166,6 +166,12 @@ export class DataPoller {
     return this.generation
   }
 
+  isCheckedIn(): boolean {
+    return this.state.checked_in === true
+      && this.checkinCacheGeneration === this.generation
+      && this.checkinCacheDate === localDate()
+  }
+
   async markCheckedIn(expectedGeneration: number): Promise<boolean> {
     if (expectedGeneration !== this.generation) return false
     this.checkinMutationVersion += 1
@@ -176,7 +182,7 @@ export class DataPoller {
     this.state = { ...this.state, checked_in: true, task_event: null }
     this.publish()
     await this.runRefresh({ wallet: true })
-    return true
+    return expectedGeneration === this.generation
   }
 
   private refreshScheduled(): Promise<void> {
