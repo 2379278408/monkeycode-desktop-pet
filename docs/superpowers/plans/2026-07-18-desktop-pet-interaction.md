@@ -132,7 +132,7 @@ git commit -m "feat: 自动监控桌宠任务状态"
 - Consumes: Task 1 的 `task_event`、活跃任务、钱包、签到和在线状态。
 - Produces: `clearTaskEvent()` 和可渲染的 `recentTaskEvent`、`checkedIn`。
 
-- [ ] **Step 1: 添加瞬时状态失败测试**
+- [x] **Step 1: 添加瞬时状态失败测试**
 
 在 `pet-store.test.ts` 添加：
 
@@ -153,13 +153,13 @@ it('shows success for eight seconds then restores working state', () => {
 
 同时覆盖失败事件、低额度恢复、重复事件不重置计时、`reset()` 清理计时器。
 
-- [ ] **Step 2: 运行 Store 测试确认失败**
+- [x] **Step 2: 运行 Store 测试确认失败**
 
 Run: `npx vitest run src/stores/pet-store.test.ts`
 
 Expected: FAIL，store 尚未处理 `task_event` 和 8 秒恢复。
 
-- [ ] **Step 3: 实现基础状态与瞬时状态分离**
+- [x] **Step 3: 实现基础状态与瞬时状态分离**
 
 实现纯函数：
 
@@ -174,13 +174,13 @@ export function deriveBasePetState(wallet: Wallet | null, tasks: Task[], online:
 
 收到新终态事件后设置 `SUCCESS` 或 `ERROR`，启动单一 8 秒 timer；timer 结束调用 `clearTaskEvent()` 并恢复基础状态。扩展 Renderer 类型，使 `StateUpdate` 包含 `checked_in` 和 `task_event`。
 
-- [ ] **Step 4: 运行 Store 测试确认通过**
+- [x] **Step 4: 运行 Store 测试确认通过**
 
 Run: `npx vitest run src/stores/pet-store.test.ts`
 
 Expected: PASS，五种状态均可达到，8 秒后恢复正确基础状态。
 
-- [ ] **Step 5: 提交状态机实现**
+- [x] **Step 5: 提交状态机实现**
 
 ```bash
 git add src/stores/pet-store.ts src/stores/pet-store.test.ts src/types/electron.d.ts
