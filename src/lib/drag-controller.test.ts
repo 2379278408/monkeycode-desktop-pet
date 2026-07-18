@@ -30,7 +30,7 @@ describe('createDragController', () => {
     controller.notifyMove()
     const cancellation = controller.cancel()
     expect(transport.cancel).toHaveBeenCalledWith('candidate')
-    await cancellation
+    await expect(cancellation).resolves.toBe(true)
 
     begin.resolve()
     await controller.started
@@ -48,7 +48,7 @@ describe('createDragController', () => {
     const finish = controller.finish()
 
     expect(transport.end).toHaveBeenCalledWith('pending')
-    await finish
+    await expect(finish).resolves.toBe(true)
     begin.resolve()
     await controller.started
   })
@@ -64,7 +64,7 @@ describe('createDragController', () => {
 
     const finish = controller.finish()
     await vi.waitFor(() => expect(transport.end).toHaveBeenCalledWith('dragging'))
-    await finish
+    await expect(finish).resolves.toBe(true)
 
     move.resolve()
   })
@@ -78,7 +78,7 @@ describe('createDragController', () => {
 
     const finish = controller.finish()
     controller.notifyMove()
-    await finish
+    await expect(finish).resolves.toBe(true)
     begin.resolve()
     await controller.started
 
@@ -93,7 +93,7 @@ describe('createDragController', () => {
     const controller = createDragController('end-failed', transport)
     controller.startDragging()
 
-    await expect(controller.finish()).resolves.toBeUndefined()
+    await expect(controller.finish()).resolves.toBe(false)
 
     expect(controller.isClosed()).toBe(true)
     expect(controller.startDragging()).toBe(false)
@@ -112,7 +112,7 @@ describe('createDragController', () => {
     controller.notifyMove()
     await vi.waitFor(() => expect(transport.move).toHaveBeenCalledTimes(2))
 
-    await expect(controller.finish()).resolves.toBeUndefined()
+    await expect(controller.finish()).resolves.toBe(true)
   })
 
   it('absorbs a synchronous cancel failure and keeps terminal calls idempotent', async () => {
@@ -125,11 +125,7 @@ describe('createDragController', () => {
     const second = controller.cancel()
     const finish = controller.finish()
 
-    await expect(Promise.all([first, second, finish])).resolves.toEqual([
-      undefined,
-      undefined,
-      undefined,
-    ])
+    await expect(Promise.all([first, second, finish])).resolves.toEqual([false, false, false])
     expect(transport.cancel).toHaveBeenCalledOnce()
     expect(transport.end).not.toHaveBeenCalled()
   })
@@ -142,7 +138,7 @@ describe('createDragController', () => {
     controller.notifyMove()
 
     await expect(controller.started).resolves.toBe(false)
-    await expect(controller.cancel()).resolves.toBeUndefined()
+    await expect(controller.cancel()).resolves.toBe(true)
 
     expect(controller.isClosed()).toBe(true)
     expect(controller.startDragging()).toBe(false)

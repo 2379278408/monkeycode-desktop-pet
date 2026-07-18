@@ -5,9 +5,10 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
-import { MonkeySprite, stateLabels } from './MonkeySprite'
+import { MonkeySprite, actionLabels } from './MonkeySprite'
 import { OrbitStatusPanel } from './OrbitStatusPanel'
-import { usePetStore } from '../stores/pet-store'
+import { usePetStore, type TaskTerminalEvent } from '../stores/pet-store'
+import { usePetLifeStore } from '../stores/pet-life-store'
 import {
   appendGesturePoint,
   classifyReleaseIntent,
@@ -15,7 +16,50 @@ import {
   type PointerIntent,
 } from '../lib/pointer-gesture'
 import { createDragController, type DragController } from '../lib/drag-controller'
-import { selectPetAction } from '../lib/pet-action'
+import {
+  selectPetAction,
+  type PetInteractionAction,
+  type PetLifeAction,
+} from '../lib/pet-action'
+
+export const PET_LIFE_TICK_MS = 60_000
+
+type TemporaryPetAction = Exclude<PetInteractionAction, 'dragging'> | PetLifeAction
+
+export function petActionDuration(action: TemporaryPetAction): number {
+  if (action === 'dropping') return 360
+  if (action === 'waking') return 1_000
+  return 1_500
+}
+
+export function pettingDurationSeconds(firstPointAt: number, releasedAt: number): number {
+  return Math.max(0, (releasedAt - firstPointAt) / 1_000)
+}
+
+export function taskResultEventKey(event: TaskTerminalEvent): string {
+  return JSON.stringify([event.task_id, event.status, event.occurred_at])
+}
+
+interface PetLifeClockCommands {
+  hydrate: (now: number) => Promise<void>
+  tick: (now: number) => void
+}
+
+export function startPetLifeClock(
+  commands: PetLifeClockCommands,
+  now: () => number = Date.now,
+): () => void {
+  try {
+    void commands.hydrate(now()).catch(() => {})
+  } catch {}
+
+  const interval = setInterval(() => {
+    try {
+      commands.tick(now())
+    } catch {}
+  }, PET_LIFE_TICK_MS)
+  return () => clearInterval(interval)
+}
 
 interface PetShellProps {
   onLogout: () => Promise<void>
@@ -25,6 +69,7 @@ interface PointerSession {
   pointerId: number
   gesture: GestureSession
   dragging: boolean
+  petStartedAt: number | null
   closing: boolean
   holdTimer: ReturnType<typeof setTimeout> | null
   captureTarget: HTMLDivElement
@@ -87,18 +132,27 @@ function createPassthroughController(): PassthroughController {
 
 export function PetShell({ onLogout }: PetShellProps) {
   const [showCard, setShowCard] = useState(false)
+  const [interactionAction, setInteractionAction] = useState<PetInteractionAction | null>(null)
+  const [lifeAction, setLifeAction] = useState<PetLifeAction | null>(null)
   const petState = usePetStore((state) => state.petState)
+  const recentTaskEvent = usePetStore((state) => state.recentTaskEvent)
   const updateFromAPI = usePetStore((s) => s.updateFromAPI)
+  const form = usePetLifeStore((state) => state.form)
+  const hydrate = usePetLifeStore((state) => state.hydrate)
+  const tick = usePetLifeStore((state) => state.tick)
+  const recordTaskResult = usePetLifeStore((state) => state.recordTaskResult)
   const petAction = selectPetAction({
-    interaction: null,
-    lifeAction: null,
+    interaction: interactionAction,
+    lifeAction,
     business: petState,
-    form: 'normal',
+    form,
   })
   const pointerSessionRef = useRef<PointerSession | null>(null)
   const latestPointerScreenPositionRef = useRef<ScreenPoint | null>(null)
   const previousClickAtRef = useRef<number | null>(null)
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const interactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lifeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const draggingRef = useRef(false)
   const modeTransitionRef = useRef(false)
   const modeGenerationRef = useRef(0)
@@ -108,6 +162,37 @@ export function PetShell({ onLogout }: PetShellProps) {
     passthroughControllerRef.current = createPassthroughController()
   }
   const passthroughController = passthroughControllerRef.current
+
+  const clearInteractionAction = useCallback(() => {
+    if (interactionTimerRef.current) clearTimeout(interactionTimerRef.current)
+    interactionTimerRef.current = null
+    setInteractionAction(null)
+  }, [])
+
+  const showInteractionAction = useCallback((action: PetInteractionAction) => {
+    if (interactionTimerRef.current) clearTimeout(interactionTimerRef.current)
+    interactionTimerRef.current = null
+    setInteractionAction(action)
+    if (action === 'dragging') return
+
+    const timer = setTimeout(() => {
+      if (interactionTimerRef.current !== timer) return
+      interactionTimerRef.current = null
+      setInteractionAction(null)
+    }, petActionDuration(action))
+    interactionTimerRef.current = timer
+  }, [])
+
+  const showLifeAction = useCallback((action: PetLifeAction) => {
+    if (lifeTimerRef.current) clearTimeout(lifeTimerRef.current)
+    setLifeAction(action)
+    const timer = setTimeout(() => {
+      if (lifeTimerRef.current !== timer) return
+      lifeTimerRef.current = null
+      setLifeAction(null)
+    }, petActionDuration(action))
+    lifeTimerRef.current = timer
+  }, [])
 
   const setMousePassthrough = useCallback((enabled: boolean) => {
     void passthroughController.request(enabled)
@@ -162,6 +247,19 @@ export function PetShell({ onLogout }: PetShellProps) {
   }, [updateFromAPI])
 
   useEffect(() => {
+    return startPetLifeClock({ hydrate, tick })
+  }, [hydrate, tick])
+
+  useEffect(() => {
+    if (!recentTaskEvent) return
+    recordTaskResult(
+      recentTaskEvent.status,
+      taskResultEventKey(recentTaskEvent),
+      recentTaskEvent.occurred_at,
+    )
+  }, [recentTaskEvent, recordTaskResult])
+
+  useEffect(() => {
     mountedRef.current = true
     const handleMouseMove = (event: MouseEvent) => {
       latestPointerScreenPositionRef.current = { x: event.screenX, y: event.screenY }
@@ -181,6 +279,10 @@ export function PetShell({ onLogout }: PetShellProps) {
         clearTimeout(clickTimerRef.current)
         clickTimerRef.current = null
       }
+      if (interactionTimerRef.current) clearTimeout(interactionTimerRef.current)
+      if (lifeTimerRef.current) clearTimeout(lifeTimerRef.current)
+      interactionTimerRef.current = null
+      lifeTimerRef.current = null
       if (session) {
         if (session.holdTimer) clearTimeout(session.holdTimer)
         try {
@@ -188,9 +290,7 @@ export function PetShell({ onLogout }: PetShellProps) {
             session.captureTarget.releasePointerCapture(session.pointerId)
           }
         } catch {}
-        const terminal = session.dragging
-          ? session.controller.finish()
-          : session.controller.cancel()
+        const terminal = session.controller.cancel()
         void terminal.finally(() => {
           if (pointerSessionRef.current === session) pointerSessionRef.current = null
           draggingRef.current = false
@@ -206,10 +306,21 @@ export function PetShell({ onLogout }: PetShellProps) {
   }, [passthroughController, restorePassthroughAt, setMousePassthrough])
 
   const finishDrag = useCallback((session: PointerSession) => {
-    closePointerSession(session, 'finish', () => {
-      if (mountedRef.current) restorePassthroughAtLatestPointer()
-    })
-  }, [closePointerSession, restorePassthroughAtLatestPointer])
+    if (session.closing) return
+    session.closing = true
+    if (session.holdTimer) {
+      clearTimeout(session.holdTimer)
+      session.holdTimer = null
+    }
+    void session.controller.finish().then((finished) => {
+      if (pointerSessionRef.current === session) pointerSessionRef.current = null
+      draggingRef.current = false
+      if (!mountedRef.current) return
+      if (finished) showInteractionAction('dropping')
+      else clearInteractionAction()
+      restorePassthroughAtLatestPointer()
+    }).catch(() => {})
+  }, [clearInteractionAction, restorePassthroughAtLatestPointer, showInteractionAction])
 
   const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0
@@ -233,6 +344,7 @@ export function PetShell({ onLogout }: PetShellProps) {
         lockedIntent: null,
       },
       dragging: false,
+      petStartedAt: null,
       closing: false,
       holdTimer: null,
       captureTarget: event.currentTarget,
@@ -257,6 +369,9 @@ export function PetShell({ onLogout }: PetShellProps) {
         y: latestPoint.y,
         at: Math.max(latestPoint.at, startedAt + 350),
       })
+      if (session.gesture.lockedIntent === 'pet-candidate') {
+        session.petStartedAt = startedAt + 350
+      }
     }, 350)
     setMousePassthrough(false)
   }, [closePointerSession, restorePassthroughAtLatestPointer, setMousePassthrough])
@@ -266,11 +381,18 @@ export function PetShell({ onLogout }: PetShellProps) {
     if (!session || session.pointerId !== event.pointerId) return
     latestPointerScreenPositionRef.current = { x: event.screenX, y: event.screenY }
 
+    const previousIntent = session.gesture.lockedIntent
     session.gesture = appendGesturePoint(session.gesture, {
       x: event.screenX,
       y: event.screenY,
       at: event.timeStamp,
     })
+    if (session.petStartedAt === null
+      && previousIntent !== 'pet-candidate'
+      && session.gesture.lockedIntent === 'pet-candidate') {
+      const pressedAt = session.gesture.origin?.at ?? session.gesture.points[0]?.at ?? event.timeStamp
+      session.petStartedAt = pressedAt + 350
+    }
     if (session.gesture.lockedIntent === 'pet-candidate'
       || session.gesture.lockedIntent === 'pet') {
       if (session.holdTimer) {
@@ -286,6 +408,18 @@ export function PetShell({ onLogout }: PetShellProps) {
       if (!session.controller.startDragging()) return
       session.dragging = true
       draggingRef.current = true
+      void session.controller.started.then((started) => {
+        if (!mountedRef.current || pointerSessionRef.current !== session || session.closing) return
+        if (started) {
+          showInteractionAction('dragging')
+          return
+        }
+        closePointerSession(session, 'cancel', () => {
+          if (!mountedRef.current) return
+          clearInteractionAction()
+          restorePassthroughAtLatestPointer()
+        })
+      })
       setMousePassthrough(false)
       session.controller.notifyMove()
       return
@@ -294,7 +428,7 @@ export function PetShell({ onLogout }: PetShellProps) {
     if (session.dragging) {
       session.controller.notifyMove()
     }
-  }, [setMousePassthrough])
+  }, [clearInteractionAction, closePointerSession, restorePassthroughAtLatestPointer, setMousePassthrough, showInteractionAction])
 
   const releasePointer = (event: ReactPointerEvent<HTMLDivElement>) => {
     try {
@@ -362,7 +496,17 @@ export function PetShell({ onLogout }: PetShellProps) {
 
     const releasedAt = event.timeStamp
     const runIntent = (releasedIntent: PointerIntent | null) => {
-      if (releasedIntent === null || releasedIntent === 'pet') {
+      if (releasedIntent === null) {
+        restorePassthroughAtLatestPointer()
+        return
+      }
+      if (releasedIntent === 'pet') {
+        const firstPointAt = session.petStartedAt ?? releasedAt
+        usePetLifeStore.getState().interact({
+          type: 'pet',
+          seconds: pettingDurationSeconds(firstPointAt, releasedAt),
+        }, Date.now())
+        showInteractionAction('petting')
         restorePassthroughAtLatestPointer()
         return
       }
@@ -370,6 +514,8 @@ export function PetShell({ onLogout }: PetShellProps) {
         if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
         clickTimerRef.current = null
         previousClickAtRef.current = null
+        usePetLifeStore.getState().interact('double-click', Date.now())
+        showInteractionAction('celebrating')
         restorePassthroughAtLatestPointer()
         return
       }
@@ -379,7 +525,16 @@ export function PetShell({ onLogout }: PetShellProps) {
         clickTimerRef.current = setTimeout(() => {
           clickTimerRef.current = null
           previousClickAtRef.current = null
-          if (mountedRef.current) toggleCard(true)
+          if (!mountedRef.current) return
+          const lifeStore = usePetLifeStore.getState()
+          if (lifeStore.snapshot.sleeping) {
+            lifeStore.wake(Date.now())
+            showLifeAction('waking')
+            return
+          }
+          lifeStore.interact('click', Date.now())
+          showInteractionAction('waving')
+          toggleCard(true)
         }, 301)
       }
     }
@@ -391,7 +546,7 @@ export function PetShell({ onLogout }: PetShellProps) {
     void session.controller.cancel().catch(() => {})
     runIntent(intent)
     releasePointer(event)
-  }, [finishDrag, restorePassthroughAtLatestPointer, toggleCard])
+  }, [finishDrag, restorePassthroughAtLatestPointer, showInteractionAction, showLifeAction, toggleCard])
 
   const cancelPointerSession = useCallback((
     event: ReactPointerEvent<HTMLDivElement>,
@@ -401,15 +556,14 @@ export function PetShell({ onLogout }: PetShellProps) {
     if (!session || session.pointerId !== event.pointerId) return
     latestPointerScreenPositionRef.current = { x: event.screenX, y: event.screenY }
 
-    if (session.dragging) {
-      finishDrag(session)
-    } else {
-      closePointerSession(session, 'cancel', () => {
-        if (mountedRef.current) restorePassthroughAtLatestPointer()
-      })
-    }
+    closePointerSession(session, 'cancel', () => {
+      if (mountedRef.current) {
+        clearInteractionAction()
+        restorePassthroughAtLatestPointer()
+      }
+    })
     if (shouldReleasePointer) releasePointer(event)
-  }, [closePointerSession, finishDrag, restorePassthroughAtLatestPointer])
+  }, [clearInteractionAction, closePointerSession, restorePassthroughAtLatestPointer])
 
   const handlePointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     cancelPointerSession(event, true)
@@ -451,15 +605,21 @@ export function PetShell({ onLogout }: PetShellProps) {
           border: 0,
         }}
       >
-        {stateLabels[petState]}
+        {actionLabels[petAction]}
       </div>
-      {showCard && <OrbitStatusPanel onLogout={onLogout} />}
+      {showCard && (
+        <OrbitStatusPanel
+          onLogout={onLogout}
+          lifeAction={lifeAction}
+          onLifeAction={showLifeAction}
+        />
+      )}
       <div
         className="pet-monkey-control"
         data-window-interactive
         role="button"
         tabIndex={0}
-        aria-label={`${stateLabels[petState]}，${showCard ? '收起状态面板' : '展开状态面板'}`}
+        aria-label={`${actionLabels[petAction]}，${showCard ? '收起状态面板' : '展开状态面板'}`}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -480,7 +640,7 @@ export function PetShell({ onLogout }: PetShellProps) {
           transform: 'translateX(-50%)',
         }}
       >
-        <MonkeySprite action={petAction} />
+        <MonkeySprite action={petAction} fallbackAction={form} />
       </div>
     </div>
   )

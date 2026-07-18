@@ -9,8 +9,8 @@ export interface DragController {
   started: Promise<boolean>
   startDragging: () => boolean
   notifyMove: () => void
-  finish: () => Promise<void>
-  cancel: () => Promise<void>
+  finish: () => Promise<boolean>
+  cancel: () => Promise<boolean>
   isClosed: () => boolean
 }
 
@@ -29,7 +29,7 @@ export function createDragController(
   let phase: 'candidate' | 'dragging' | 'closed' = 'candidate'
   let movePending = false
   let movePump: Promise<void> | null = null
-  let terminalPromise: Promise<void> | null = null
+  let terminalPromise: Promise<boolean> | null = null
   let beginState: 'pending' | 'succeeded' | 'failed' = 'pending'
 
   const started = invokeSafely(() => transport.begin(sessionId)).then((succeeded) => {
@@ -56,11 +56,11 @@ export function createDragController(
 
   const close = (operation: DragTransport['end'] | DragTransport['cancel']) => {
     if (terminalPromise) return terminalPromise
-    if (phase === 'closed') return Promise.resolve()
+    if (phase === 'closed') return Promise.resolve(false)
 
     phase = 'closed'
     movePending = false
-    terminalPromise = invokeSafely(() => operation(sessionId)).then(() => {})
+    terminalPromise = invokeSafely(() => operation(sessionId))
     return terminalPromise
   }
 

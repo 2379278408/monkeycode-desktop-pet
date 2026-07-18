@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { usePetStore } from '../stores/pet-store'
+import { usePetLifeStore, type PetLifeStoreState } from '../stores/pet-life-store'
+import type { PetLifeAction } from '../lib/pet-action'
 import { BubbleCard } from './BubbleCard'
 import { TaskItem } from './TaskItem'
 
@@ -14,6 +16,7 @@ export const ORBIT_LAYOUT = {
   quota: { left: 10, top: 32, width: 146, height: 108 },
   tasks: { left: 196, top: 16, width: 174, height: 166 },
   checkin: { left: 10, top: 178, width: 140, height: 108 },
+  life: { left: 8, top: 294, width: 108, height: 126 },
   actions: { left: 280, top: 278, width: 88, height: 142 },
   monkey: { left: 120, top: 290, width: 140, height: 140 },
 } as const
@@ -51,20 +54,50 @@ function formatTokens(value: number): string {
 
 interface OrbitStatusPanelProps {
   onLogout: () => Promise<void>
+  lifeAction: PetLifeAction | null
+  onLifeAction: (action: PetLifeAction) => void
 }
 
-export function OrbitStatusPanel({ onLogout }: OrbitStatusPanelProps) {
+type LifeCommands = Pick<PetLifeStoreState, 'feed' | 'sleep' | 'wake'>
+
+export function executeLifeCommand(
+  action: PetLifeAction,
+  commands: LifeCommands,
+  onLifeAction: (action: PetLifeAction) => void,
+): void {
+  if (action === 'eating') commands.feed()
+  else if (action === 'falling-asleep') commands.sleep()
+  else commands.wake()
+  onLifeAction(action)
+}
+
+function lifeValue(value: number): number {
+  return Math.round(Math.max(0, Math.min(100, value)))
+}
+
+export function OrbitStatusPanel({ onLogout, lifeAction, onLifeAction }: OrbitStatusPanelProps) {
   const wallet = usePetStore((state) => state.wallet)
   const tasks = usePetStore((state) => state.tasks)
   const online = usePetStore((state) => state.online)
   const error = usePetStore((state) => state.error)
   const checkedIn = usePetStore((state) => state.checkedIn)
   const recentTaskEvent = usePetStore((state) => state.recentTaskEvent)
+  const snapshot = usePetLifeStore((state) => state.snapshot)
+  const hydrated = usePetLifeStore((state) => state.hydrated)
+  const persistenceError = usePetLifeStore((state) => state.persistenceError)
+  const feed = usePetLifeStore((state) => state.feed)
+  const sleep = usePetLifeStore((state) => state.sleep)
+  const wake = usePetLifeStore((state) => state.wake)
   const [checkin, setCheckin] = useState<CheckinFeedback>(() => initialCheckinFeedback(checkedIn))
   const [refreshing, setRefreshing] = useState(false)
   const [openingPlatform, setOpeningPlatform] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const [actionMessage, setActionMessage] = useState('')
+  const lifeRequestPendingRef = useRef(false)
+
+  useEffect(() => {
+    if (lifeAction === null) lifeRequestPendingRef.current = false
+  }, [lifeAction])
 
   useEffect(() => {
     setCheckin((current) => syncCheckinFeedback(current, checkedIn))
@@ -85,6 +118,13 @@ export function OrbitStatusPanel({ onLogout }: OrbitStatusPanelProps) {
     : 0
   const quotaLow = dailyLimit > 0 && quotaPercent < 10
   const activeTasks = tasks.slice(0, 3)
+  const lifeCommands = { feed, sleep, wake }
+  const lifeBusy = !hydrated || lifeAction !== null
+  const lifeRows = [
+    { label: '心情', value: lifeValue(snapshot.mood), color: '#d35f8d' },
+    { label: '饱食度', value: lifeValue(snapshot.satiety), color: '#d99016' },
+    { label: '精力', value: lifeValue(snapshot.energy), color: '#4f7cff' },
+  ]
   const checkinDisabled = checkedIn !== false
     || checkin.state === 'submitting'
     || checkin.state === 'success'
@@ -284,6 +324,71 @@ export function OrbitStatusPanel({ onLogout }: OrbitStatusPanelProps) {
           }}
         >
           {checkin.message}
+        </div>
+      </BubbleCard>
+
+      <BubbleCard title="Life" accent="#d35f8d" style={{ ...ORBIT_LAYOUT.life, padding: 8 }}>
+        {persistenceError && (
+          <span
+            className="orbit-life-save-error"
+            role="status"
+            aria-live="polite"
+            aria-label="生命状态暂时无法保存"
+          >
+            未保存
+          </span>
+        )}
+        <div className="orbit-life-values">
+          {lifeRows.map(({ label, value, color }) => (
+            <div className="orbit-life-row" key={label}>
+              <span>{label}</span>
+              <div
+                className="orbit-life-progress"
+                role="progressbar"
+                aria-label={`${label} ${value}`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={value}
+              >
+                <span style={{ width: `${value}%`, background: color }} />
+              </div>
+              <strong>{value}</strong>
+            </div>
+          ))}
+        </div>
+        <div className="orbit-life-actions">
+          <button
+            type="button"
+            className="orbit-life-button"
+            data-window-interactive
+            aria-label="喂食桌宠"
+            disabled={lifeBusy}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation()
+              if (lifeBusy || lifeRequestPendingRef.current) return
+              lifeRequestPendingRef.current = true
+              executeLifeCommand('eating', lifeCommands, onLifeAction)
+            }}
+          >
+            喂食
+          </button>
+          <button
+            type="button"
+            className="orbit-life-button"
+            data-window-interactive
+            aria-label={snapshot.sleeping ? '唤醒桌宠' : '让桌宠睡觉'}
+            disabled={lifeBusy}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation()
+              if (lifeBusy || lifeRequestPendingRef.current) return
+              lifeRequestPendingRef.current = true
+              executeLifeCommand(snapshot.sleeping ? 'waking' : 'falling-asleep', lifeCommands, onLifeAction)
+            }}
+          >
+            {snapshot.sleeping ? '唤醒' : '睡觉'}
+          </button>
         </div>
       </BubbleCard>
 

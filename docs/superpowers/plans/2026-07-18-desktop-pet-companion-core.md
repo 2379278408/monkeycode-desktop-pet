@@ -696,16 +696,18 @@ git commit -m "feat: 增加桌宠陪伴形态与互动动作"
 
 **Files:**
 - Modify: `src/components/PetShell.tsx`
+- Modify: `src/components/PetShell.test.ts`
 - Modify: `src/components/OrbitStatusPanel.tsx`
 - Modify: `src/components/OrbitStatusPanel.test.ts`
-- Modify: `src/components/MonkeySprite.tsx`
+- Modify: `src/lib/drag-controller.ts`
+- Modify: `src/lib/drag-controller.test.ts`
 - Modify: `src/styles.css`
 
 **Interfaces:**
 - Consumes: `usePetLifeStore` 和 `selectPetAction`。
 - Produces: 可操作的喂食、睡觉/唤醒按钮，三项生命值展示和完整手势反馈。
 
-- [ ] **Step 1: 添加面板交互失败测试**
+- [x] **Step 1: 添加面板交互失败测试**
 
 扩展 `OrbitStatusPanel.test.ts`：
 
@@ -721,31 +723,31 @@ it('exposes pet life values and life actions', () => {
 
 增加 store mock 测试，断言喂食按钮调用 `feed`，睡眠时按钮文案变为“唤醒”并调用 `wake`。
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run src/components/OrbitStatusPanel.test.ts`
 
 Expected: FAIL，提示生命值和操作入口缺失。
 
-- [ ] **Step 3: 实现生命状态面板**
+- [x] **Step 3: 实现生命状态面板**
 
 在环绕面板增加紧凑生命卡，显示三项 0 至 100 数值和可访问进度条。增加“喂食”和“睡觉/唤醒”按钮；动作进行时禁用重复操作。保持三张环绕卡布局和透明命中逻辑。
 
-- [ ] **Step 4: 连接手势与动作计时**
+- [x] **Step 4: 连接手势与动作计时**
 
 PetShell 启动时调用 `hydrate`，每 60 秒调用 `tick(Date.now())`。手势事件映射：click→waving，double-click→celebrating，pet→petting，drag→dragging，release→dropping。喂食、入睡和唤醒动作结束后重新调用 `derivePetForm`。临时互动动作最长 3 秒，拖动动作由会话结束控制。
 
-- [ ] **Step 5: 完善可访问性和 reduced-motion**
+- [x] **Step 5: 完善可访问性和 reduced-motion**
 
 live region 播报动作标签；按钮包含明确中文 `aria-label`；进度条提供 `aria-valuemin=0`、`aria-valuemax=100` 和当前值；键盘 Enter/Space 保留展开行为，生活操作按钮阻止事件冒泡。
 
-- [ ] **Step 6: 运行 UI 与全量验证**
+- [x] **Step 6: 运行 UI 与全量验证**
 
 Run: `npx vitest run src/components/OrbitStatusPanel.test.ts src/components/MonkeySprite.test.ts src/stores/pet-life-store.test.ts && npm run verify && npm audit --omit=dev --fetch-timeout=60000 && git diff --check`
 
 Expected: 测试、类型检查、bundle 边界、Vite 构建和生产依赖审计通过，审计为 0 漏洞。
 
-- [ ] **Step 7: 提交互动 UI**
+- [x] **Step 7: 提交互动 UI**
 
 ```bash
 git add src/components/PetShell.tsx src/components/OrbitStatusPanel.tsx src/components/OrbitStatusPanel.test.ts src/components/MonkeySprite.tsx src/styles.css
