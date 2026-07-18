@@ -382,7 +382,7 @@ git commit -m "feat: 增加桌宠五种状态动作"
 - Consumes: Task 1 至 Task 5 的完整实现。
 - Produces: Windows x64 NSIS 1.1.0 安装包和验收记录。
 
-- [ ] **Step 1: 更新版本和忽略视觉草稿**
+- [x] **Step 1: 更新版本和忽略视觉草稿**
 
 将 `package.json`、`package-lock.json` 顶层版本和根包版本改为 `1.1.0`，并在 `.gitignore` 增加：
 
@@ -390,24 +390,24 @@ git commit -m "feat: 增加桌宠五种状态动作"
 .superpowers/
 ```
 
-- [ ] **Step 2: 运行最终本地验证**
+- [x] **Step 2: 运行最终本地验证**
 
 Run: `npm run verify && npm audit --omit=dev && git diff --check`
 
 Expected: 所有测试、类型检查、Electron bundle 边界、Vite 构建和生产依赖审计通过，`git diff --check` 无输出。
 
-- [ ] **Step 3: 提交版本和构建配置**
+- [x] **Step 3: 提交版本和构建配置**
 
 ```bash
 git add package.json package-lock.json .gitignore
 git commit -m "chore: 发布桌宠 1.1.0"
 ```
 
-- [ ] **Step 4: 请求独立代码审查**
+- [x] **Step 4: 请求独立代码审查**
 
 审查范围从 `a8fa8f2` 到当前 HEAD，重点检查任务代际、任务终态去重、签到跨天、IPC 安全、透明穿透、窗口边界和状态资源完整性。修复全部 Critical 和 Important 问题后重新运行 Step 2。
 
-- [ ] **Step 5: 推送并触发 Windows CI**
+- [x] **Step 5: 推送并触发 Windows CI**
 
 Run: `git push origin 260717-fix-auth-data-chain`
 
@@ -415,7 +415,7 @@ Run: `gh workflow run build-win.yml --ref 260717-fix-auth-data-chain`
 
 Expected: 新的 Windows workflow run 被创建。
 
-- [ ] **Step 6: 下载并校验 Artifact**
+- [x] **Step 6: 下载并校验 Artifact**
 
 Run: `INTERACTION_RUN_ID=$(gh run list --workflow build-win.yml --branch 260717-fix-auth-data-chain --limit 1 --json databaseId --jq '.[0].databaseId')`
 
@@ -430,6 +430,8 @@ Run: `sha256sum "/tmp/desktop-pet-build/interaction-1.1.0/MonkeyCode Desktop Pet
 Run: `stat -c '%n %s bytes' "/tmp/desktop-pet-build/interaction-1.1.0/MonkeyCode Desktop Pet Setup 1.1.0.exe"`
 
 Expected: CI 全部步骤通过，EXE 存在且大小大于 0，SHA-256 已记录。
+
+Result: Windows CI Run `29643408317` 通过；安装包大小 `100091928` bytes；SHA-256 `a4e16a873b24ec6693c28b2ec1fcbdc942bd207a993d2480a086e527d397a332`。
 
 - [ ] **Step 7: Windows 实机终验**
 
