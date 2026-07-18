@@ -447,9 +447,9 @@ git commit -m "feat: 持久化桌宠生命状态"
 
 **Interfaces:**
 - Consumes: 指针轨迹、按压时间、前一次点击时间。
-- Produces: `PointerIntent = 'click' | 'double-click' | 'drag' | 'pet'`、`GestureSession`、`appendGesturePoint`、`classifyReleaseIntent`。
+- Produces: `PointerIntent = 'click' | 'double-click' | 'drag' | 'pet'`、`GestureSession`、`appendGesturePoint`、`classifyReleaseIntent`；未完成的抚摸候选释放为 `null`。
 
-- [ ] **Step 1: 添加手势互斥失败测试**
+- [x] **Step 1: 添加手势互斥失败测试**
 
 在 `src/lib/pointer-gesture.test.ts` 添加：
 
@@ -494,13 +494,13 @@ it('keeps a directional movement as drag', () => {
 })
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run src/lib/pointer-gesture.test.ts`
 
 Expected: FAIL，提示新接口尚未导出。
 
-- [ ] **Step 3: 实现轨迹与意图分类**
+- [x] **Step 3: 实现轨迹与意图分类**
 
 在 `src/lib/pointer-gesture.ts` 定义：
 
@@ -510,23 +510,23 @@ export interface GesturePoint extends Point { at: number }
 export interface GestureSession {
   points: GesturePoint[]
   previousClickAt: number | null
-  lockedIntent: 'drag' | 'pet-candidate' | null
+  lockedIntent: 'drag' | 'pet-candidate' | 'pet' | null
 }
 ```
 
-规则固定为：按下后 350 毫秒内位移达到 5 像素时立即锁定拖动；静止按住达到 350 毫秒时锁定抚摸候选，此后总轨迹达到 80 像素且主轴方向反转至少 2 次时确认为抚摸；短按释放为点击；前一次点击间隔不超过 300 毫秒为双击。轨迹最多保存最近 32 点，锁定后的手势不再切换类别。
+规则固定为：按下后 350 毫秒内位移达到 5 像素时立即锁定拖动；静止按住达到 350 毫秒时锁定抚摸候选，此后总轨迹达到 80 像素且主轴方向反转至少 2 次时确认为抚摸；短按释放为点击；前一次点击间隔不超过 300 毫秒为双击。轨迹最多保存最近 32 点，原始按下点和抚摸累计指标独立保留。锁定后的手势不再切换类别，350 毫秒边界内达到 5 像素时拖动优先；未达标的抚摸候选释放时不产生点击事件。
 
-- [ ] **Step 4: 接入 PetShell**
+- [x] **Step 4: 接入 PetShell**
 
-`PetShell` 在 pointer down 创建轨迹和 350 毫秒长按计时器；计时器触发前位移达到 5 像素时取消计时器并进入拖动；计时器触发后锁定抚摸候选并累计往返轨迹；pointer up 产生 click、double-click 或 pet 事件。单击使用 300 毫秒定时器延后执行，双击到达时取消单击定时器。组件卸载时清理两个定时器和 pointer capture。
+`PetShell` 在 pointer down 创建轨迹和 350 毫秒长按计时器；计时器触发前位移达到 5 像素时取消计时器并进入拖动；计时器触发后锁定抚摸候选并累计往返轨迹；pointer up 产生 click、double-click 或 pet 事件。单击使用 301 毫秒定时器延后执行，为 300 毫秒双击边界留出调度余量，双击到达时取消单击定时器。非拖动释放同步关闭本地会话并异步取消主进程候选，拖动释放、取消和丢失捕获统一完成最终位置。组件卸载时清理定时器和 pointer capture；手势结束和窗口模式变化后按最新指针位置恢复穿透。
 
-- [ ] **Step 5: 运行手势和全量验证**
+- [x] **Step 5: 运行手势和全量验证**
 
 Run: `npx vitest run src/lib/pointer-gesture.test.ts && npm run verify`
 
 Expected: 手势测试和全量验证通过。
 
-- [ ] **Step 6: 提交手势实现**
+- [x] **Step 6: 提交手势实现**
 
 ```bash
 git add src/lib/pointer-gesture.ts src/lib/pointer-gesture.test.ts src/components/PetShell.tsx

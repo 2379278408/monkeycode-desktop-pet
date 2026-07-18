@@ -8,7 +8,12 @@ import {
 import { MonkeySprite, stateLabels } from './MonkeySprite'
 import { OrbitStatusPanel } from './OrbitStatusPanel'
 import { usePetStore } from '../stores/pet-store'
-import { classifyGesture } from '../lib/pointer-gesture'
+import {
+  appendGesturePoint,
+  classifyReleaseIntent,
+  type GestureSession,
+  type PointerIntent,
+} from '../lib/pointer-gesture'
 import { createDragController, type DragController } from '../lib/drag-controller'
 
 interface PetShellProps {
@@ -17,9 +22,11 @@ interface PetShellProps {
 
 interface PointerSession {
   pointerId: number
-  start: ScreenPoint
+  gesture: GestureSession
   dragging: boolean
   closing: boolean
+  holdTimer: ReturnType<typeof setTimeout> | null
+  captureTarget: HTMLDivElement
   controller: DragController
 }
 
@@ -82,6 +89,9 @@ export function PetShell({ onLogout }: PetShellProps) {
   const petState = usePetStore((state) => state.petState)
   const updateFromAPI = usePetStore((s) => s.updateFromAPI)
   const pointerSessionRef = useRef<PointerSession | null>(null)
+  const latestPointerScreenPositionRef = useRef<ScreenPoint | null>(null)
+  const previousClickAtRef = useRef<number | null>(null)
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const draggingRef = useRef(false)
   const modeTransitionRef = useRef(false)
   const modeGenerationRef = useRef(0)
@@ -103,6 +113,18 @@ export function PetShell({ onLogout }: PetShellProps) {
     setMousePassthrough(!interactive)
   }, [setMousePassthrough])
 
+  const restorePassthroughAtLatestPointer = useCallback(() => {
+    const position = latestPointerScreenPositionRef.current
+    if (!position) {
+      setMousePassthrough(false)
+      return
+    }
+    restorePassthroughAt(
+      position.x - window.screenX,
+      position.y - window.screenY,
+    )
+  }, [restorePassthroughAt, setMousePassthrough])
+
   const closePointerSession = useCallback((
     session: PointerSession,
     terminal: 'finish' | 'cancel',
@@ -110,6 +132,10 @@ export function PetShell({ onLogout }: PetShellProps) {
   ) => {
     if (session.closing) return
     session.closing = true
+    if (session.holdTimer) {
+      clearTimeout(session.holdTimer)
+      session.holdTimer = null
+    }
     const operation = terminal === 'finish'
       ? session.controller.finish()
       : session.controller.cancel()
@@ -131,6 +157,7 @@ export function PetShell({ onLogout }: PetShellProps) {
   useEffect(() => {
     mountedRef.current = true
     const handleMouseMove = (event: MouseEvent) => {
+      latestPointerScreenPositionRef.current = { x: event.screenX, y: event.screenY }
       if (pointerSessionRef.current || draggingRef.current || modeTransitionRef.current) {
         setMousePassthrough(false)
         return
@@ -143,7 +170,17 @@ export function PetShell({ onLogout }: PetShellProps) {
       mountedRef.current = false
       window.removeEventListener('mousemove', handleMouseMove)
       const session = pointerSessionRef.current
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current)
+        clickTimerRef.current = null
+      }
       if (session) {
+        if (session.holdTimer) clearTimeout(session.holdTimer)
+        try {
+          if (session.captureTarget.hasPointerCapture(session.pointerId)) {
+            session.captureTarget.releasePointerCapture(session.pointerId)
+          }
+        } catch {}
         const terminal = session.dragging
           ? session.controller.finish()
           : session.controller.cancel()
@@ -161,19 +198,18 @@ export function PetShell({ onLogout }: PetShellProps) {
     }
   }, [passthroughController, restorePassthroughAt, setMousePassthrough])
 
-  const finishDrag = useCallback((session: PointerSession, screenX: number, screenY: number) => {
+  const finishDrag = useCallback((session: PointerSession) => {
     closePointerSession(session, 'finish', () => {
-      if (mountedRef.current) {
-        restorePassthroughAt(screenX - window.screenX, screenY - window.screenY)
-      }
+      if (mountedRef.current) restorePassthroughAtLatestPointer()
     })
-  }, [closePointerSession, restorePassthroughAt])
+  }, [closePointerSession, restorePassthroughAtLatestPointer])
 
   const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0
       || pointerSessionRef.current
       || draggingRef.current
       || modeTransitionRef.current) return
+    latestPointerScreenPositionRef.current = { x: event.screenX, y: event.screenY }
 
     const dragSessionId = crypto.randomUUID()
     const controller = createDragController(dragSessionId, {
@@ -184,9 +220,15 @@ export function PetShell({ onLogout }: PetShellProps) {
     })
     const session: PointerSession = {
       pointerId: event.pointerId,
-      start: { x: event.screenX, y: event.screenY },
+      gesture: {
+        points: [{ x: event.screenX, y: event.screenY, at: event.timeStamp }],
+        previousClickAt: previousClickAtRef.current,
+        lockedIntent: null,
+      },
       dragging: false,
       closing: false,
+      holdTimer: null,
+      captureTarget: event.currentTarget,
       controller,
     }
     pointerSessionRef.current = session
@@ -194,19 +236,46 @@ export function PetShell({ onLogout }: PetShellProps) {
       event.currentTarget.setPointerCapture(event.pointerId)
     } catch {
       closePointerSession(session, 'cancel', () => {
-        if (mountedRef.current) restorePassthroughAt(event.clientX, event.clientY)
+        if (mountedRef.current) restorePassthroughAtLatestPointer()
       })
       return
     }
+    const startedAt = event.timeStamp
+    session.holdTimer = setTimeout(() => {
+      if (!mountedRef.current || pointerSessionRef.current !== session || session.closing) return
+      session.holdTimer = null
+      const latestPoint = session.gesture.points[session.gesture.points.length - 1]
+      session.gesture = appendGesturePoint(session.gesture, {
+        x: latestPoint.x,
+        y: latestPoint.y,
+        at: Math.max(latestPoint.at, startedAt + 350),
+      })
+    }, 350)
     setMousePassthrough(false)
-  }, [closePointerSession, restorePassthroughAt, setMousePassthrough])
+  }, [closePointerSession, restorePassthroughAtLatestPointer, setMousePassthrough])
 
   const handlePointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const session = pointerSessionRef.current
     if (!session || session.pointerId !== event.pointerId) return
+    latestPointerScreenPositionRef.current = { x: event.screenX, y: event.screenY }
 
-    if (!session.dragging
-      && classifyGesture(session.start, { x: event.screenX, y: event.screenY }, 5) === 'drag') {
+    session.gesture = appendGesturePoint(session.gesture, {
+      x: event.screenX,
+      y: event.screenY,
+      at: event.timeStamp,
+    })
+    if (session.gesture.lockedIntent === 'pet-candidate'
+      || session.gesture.lockedIntent === 'pet') {
+      if (session.holdTimer) {
+        clearTimeout(session.holdTimer)
+        session.holdTimer = null
+      }
+    }
+    if (!session.dragging && session.gesture.lockedIntent === 'drag') {
+      if (session.holdTimer) {
+        clearTimeout(session.holdTimer)
+        session.holdTimer = null
+      }
       if (!session.controller.startDragging()) return
       session.dragging = true
       draggingRef.current = true
@@ -228,20 +297,18 @@ export function PetShell({ onLogout }: PetShellProps) {
     } catch {}
   }
 
-  const toggleCard = useCallback((pointerScreenPosition?: ScreenPoint) => {
+  const toggleCard = useCallback((restoreAtPointer = false) => {
     const nextShowCard = !showCard
     const generation = modeGenerationRef.current + 1
     modeGenerationRef.current = generation
     modeTransitionRef.current = true
 
     const restoreAfterModeChange = () => {
-      if (!pointerScreenPosition) {
+      if (!restoreAtPointer) {
         setMousePassthrough(false)
         return
       }
-      const clientX = pointerScreenPosition.x - window.screenX
-      const clientY = pointerScreenPosition.y - window.screenY
-      restorePassthroughAt(clientX, clientY)
+      restorePassthroughAtLatestPointer()
     }
 
     const changeMode = async () => {
@@ -263,23 +330,61 @@ export function PetShell({ onLogout }: PetShellProps) {
       }
     }
     void changeMode()
-  }, [passthroughController, restorePassthroughAt, setMousePassthrough, showCard])
+  }, [passthroughController, restorePassthroughAtLatestPointer, setMousePassthrough, showCard])
 
   const handlePointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const session = pointerSessionRef.current
     if (!session || session.pointerId !== event.pointerId) return
+    latestPointerScreenPositionRef.current = { x: event.screenX, y: event.screenY }
 
+    session.gesture = appendGesturePoint(session.gesture, {
+      x: event.screenX,
+      y: event.screenY,
+      at: event.timeStamp,
+    })
+    const intent = classifyReleaseIntent(session.gesture)
+    if (intent === 'drag' && !session.dragging && session.controller.startDragging()) {
+      session.dragging = true
+      draggingRef.current = true
+    }
     if (session.dragging) {
-      finishDrag(session, event.screenX, event.screenY)
+      finishDrag(session)
       releasePointer(event)
       return
     }
 
-    closePointerSession(session, 'cancel', () => {
-      if (mountedRef.current) toggleCard({ x: event.screenX, y: event.screenY })
-    })
+    const releasedAt = event.timeStamp
+    const runIntent = (releasedIntent: PointerIntent | null) => {
+      if (releasedIntent === null || releasedIntent === 'pet') {
+        restorePassthroughAtLatestPointer()
+        return
+      }
+      if (releasedIntent === 'double-click') {
+        if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
+        clickTimerRef.current = null
+        previousClickAtRef.current = null
+        restorePassthroughAtLatestPointer()
+        return
+      }
+      if (releasedIntent === 'click') {
+        previousClickAtRef.current = releasedAt
+        if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
+        clickTimerRef.current = setTimeout(() => {
+          clickTimerRef.current = null
+          previousClickAtRef.current = null
+          if (mountedRef.current) toggleCard(true)
+        }, 301)
+      }
+    }
+    if (session.holdTimer) clearTimeout(session.holdTimer)
+    session.holdTimer = null
+    session.closing = true
+    pointerSessionRef.current = null
+    draggingRef.current = false
+    void session.controller.cancel().catch(() => {})
+    runIntent(intent)
     releasePointer(event)
-  }, [closePointerSession, finishDrag, toggleCard])
+  }, [finishDrag, restorePassthroughAtLatestPointer, toggleCard])
 
   const cancelPointerSession = useCallback((
     event: ReactPointerEvent<HTMLDivElement>,
@@ -287,16 +392,17 @@ export function PetShell({ onLogout }: PetShellProps) {
   ) => {
     const session = pointerSessionRef.current
     if (!session || session.pointerId !== event.pointerId) return
+    latestPointerScreenPositionRef.current = { x: event.screenX, y: event.screenY }
 
     if (session.dragging) {
-      finishDrag(session, event.screenX, event.screenY)
+      finishDrag(session)
     } else {
       closePointerSession(session, 'cancel', () => {
-        if (mountedRef.current) restorePassthroughAt(event.clientX, event.clientY)
+        if (mountedRef.current) restorePassthroughAtLatestPointer()
       })
     }
     if (shouldReleasePointer) releasePointer(event)
-  }, [closePointerSession, finishDrag, restorePassthroughAt])
+  }, [closePointerSession, finishDrag, restorePassthroughAtLatestPointer])
 
   const handlePointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     cancelPointerSession(event, true)
