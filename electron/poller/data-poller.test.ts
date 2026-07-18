@@ -266,37 +266,86 @@ describe('DataPoller', () => {
     expect(vi.getTimerCount()).toBe(1)
   })
 
-  it('merges overlapping refreshes and preserves a checked-in mutation', async () => {
-    let resolveFirstWallet: ((value: unknown) => void) | undefined
-    let walletRequestCount = 0
+  it('merges refreshAll into an in-flight task refresh', async () => {
+    let resolveFirstTasks: ((value: unknown) => void) | undefined
+    let taskRequestCount = 0
     api.request.mockImplementation((path: string) => {
-      if (path === '/api/v1/users/wallet') {
-        walletRequestCount += 1
-        if (walletRequestCount === 1) {
+      if (path.includes('status=processing,pending')) {
+        taskRequestCount += 1
+        if (taskRequestCount === 1) {
           return new Promise((resolve) => {
-            resolveFirstWallet = resolve
+            resolveFirstTasks = resolve
           })
         }
-        return Promise.resolve(wallet)
+        return Promise.resolve({ tasks: [] })
       }
+      if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
       if (path === '/api/v1/users/wallet/checkin') return Promise.resolve({ checked_in: false })
-      return Promise.resolve({ tasks: [{ id: 't1', status: 'processing' }] })
+      throw new Error(`Unexpected path: ${path}`)
+    })
+
+    const refreshTasks = poller.refreshTasks()
+    const refreshAll = poller.refreshAll()
+    resolveFirstTasks?.({ tasks: [] })
+    await Promise.all([refreshTasks, refreshAll])
+
+    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet')).toHaveLength(1)
+    expect(api.request.mock.calls.filter(([path]) => String(path).includes('status=processing,pending'))).toHaveLength(2)
+    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet/checkin')).toHaveLength(1)
+  })
+
+  it('does not let an in-flight checkin response overwrite markCheckedIn', async () => {
+    let resolveCheckin: ((value: unknown) => void) | undefined
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
+      if (path === '/api/v1/users/wallet/checkin') {
+        return new Promise((resolve) => {
+          resolveCheckin = resolve
+        })
+      }
+      return Promise.resolve({ tasks: [] })
     })
     const updates: PollerState[] = []
     poller.onUpdate((state) => updates.push(state))
 
     const refreshAll = poller.refreshAll()
-    const refreshTasks = poller.refreshTasks()
     const markCheckedIn = poller.markCheckedIn()
-    resolveFirstWallet?.(wallet)
-    await Promise.all([refreshAll, refreshTasks, markCheckedIn])
+    resolveCheckin?.({ checked_in: false })
+    await Promise.all([refreshAll, markCheckedIn])
 
-    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet')).toHaveLength(2)
-    expect(api.request.mock.calls.filter(([path]) => String(path).includes('status=processing,pending'))).toHaveLength(2)
-    expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet/checkin')).toHaveLength(1)
     const checkedInIndex = updates.findIndex((state) => state.checked_in === true)
     expect(checkedInIndex).toBeGreaterThanOrEqual(0)
     expect(updates.slice(checkedInIndex).every((state) => state.checked_in === true)).toBe(true)
+  })
+
+  it('ignores a previous-day checkin response and immediately queries the new day', async () => {
+    vi.setSystemTime(new Date(2026, 6, 18, 23, 59, 59))
+    let resolveOldCheckin: ((value: unknown) => void) | undefined
+    let checkinRequestCount = 0
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/wallet') return Promise.resolve(wallet)
+      if (path === '/api/v1/users/wallet/checkin') {
+        checkinRequestCount += 1
+        if (checkinRequestCount === 1) {
+          return new Promise((resolve) => {
+            resolveOldCheckin = resolve
+          })
+        }
+        return Promise.resolve({ checked_in: true })
+      }
+      return Promise.resolve({ tasks: [] })
+    })
+    const updates: PollerState[] = []
+    poller.onUpdate((state) => updates.push(state))
+
+    const refresh = poller.refreshAll()
+    vi.setSystemTime(new Date(2026, 6, 19, 0, 0, 1))
+    resolveOldCheckin?.({ checked_in: false })
+    await refresh
+
+    expect(checkinRequestCount).toBe(2)
+    expect(updates.every((state) => state.checked_in !== false)).toBe(true)
+    expect(updates[updates.length - 1].checked_in).toBe(true)
   })
 
   it('preserves data and reports offline network state', async () => {
@@ -380,38 +429,41 @@ describe('DataPoller', () => {
     expect(api.request.mock.calls.filter(([path]) => String(path).includes('status=processing,pending'))).toHaveLength(1)
   })
 
-  it('ignores stale task detail errors after reset', async () => {
-    let rejectDetail: ((error: unknown) => void) | undefined
-    let activeRequestCount = 0
-    api.request.mockImplementation((path: string) => {
-      if (path.includes('status=processing,pending')) {
-        activeRequestCount += 1
-        return Promise.resolve(activeRequestCount === 1
-          ? { tasks: [{ id: 't1', status: 'processing' }] }
-          : { tasks: [] })
-      }
-      if (path === '/api/v1/users/tasks/t1') {
-        return new Promise((_, reject) => {
-          rejectDetail = reject
-        })
-      }
-      throw new Error(`Unexpected path: ${path}`)
-    })
-    const expired = vi.fn()
-    const updates: PollerState[] = []
-    poller.onAuthExpired(expired)
-    poller.onUpdate((state) => updates.push(state))
-    await poller.refreshTasks()
-    const staleRefresh = poller.refreshTasks()
-    await vi.advanceTimersByTimeAsync(0)
+  it.each(['finished', 'error'] as const)(
+    'ignores a stale %s task detail response after reset',
+    async (status) => {
+      let resolveDetail: ((value: unknown) => void) | undefined
+      let activeRequestCount = 0
+      api.request.mockImplementation((path: string) => {
+        if (path.includes('status=processing,pending')) {
+          activeRequestCount += 1
+          return Promise.resolve(activeRequestCount === 1
+            ? { tasks: [{ id: 't1', status: 'processing' }] }
+            : { tasks: [] })
+        }
+        if (path === '/api/v1/users/tasks/t1') {
+          return new Promise((resolve) => {
+            resolveDetail = resolve
+          })
+        }
+        throw new Error(`Unexpected path: ${path}`)
+      })
+      const expired = vi.fn()
+      const updates: PollerState[] = []
+      poller.onAuthExpired(expired)
+      poller.onUpdate((state) => updates.push(state))
+      await poller.refreshTasks()
+      const staleRefresh = poller.refreshTasks()
+      await vi.advanceTimersByTimeAsync(0)
 
-    poller.reset()
-    rejectDetail?.(new ApiError('未登录', 401, 401))
-    await staleRefresh
+      poller.reset()
+      resolveDetail?.({ id: 't1', status })
+      await staleRefresh
 
-    expect(expired).not.toHaveBeenCalled()
-    expect(updates.some((state) => state.task_event !== null)).toBe(false)
-  })
+      expect(expired).not.toHaveBeenCalled()
+      expect(updates.some((state) => state.task_event !== null)).toBe(false)
+    },
+  )
 
   it('queries checkin again after reset', async () => {
     await poller.refreshAll()

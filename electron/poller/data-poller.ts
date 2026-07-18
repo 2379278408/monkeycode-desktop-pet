@@ -207,6 +207,7 @@ export class DataPoller {
 
   private async executeRefresh(selection: RefreshSelection, generation: number): Promise<void> {
     const checkinVersion = this.checkinMutationVersion
+    const checkinRequestDate = selection.checkin ? localDate() : null
 
     try {
       const [walletResult, checkinResult, taskListResult] = await Promise.all([
@@ -222,6 +223,13 @@ export class DataPoller {
       ])
       if (generation !== this.generation) return
 
+      const checkinResponseDate = selection.checkin ? localDate() : null
+      if (checkinRequestDate !== null && checkinRequestDate !== checkinResponseDate) {
+        if (this.refreshQueue?.generation === generation) {
+          this.mergeSelection(this.refreshQueue.pending, { checkin: true })
+        }
+      }
+
       const initialErrors: unknown[] = []
       for (const result of [walletResult, checkinResult, taskListResult]) {
         if (result && 'error' in result) initialErrors.push(result.error)
@@ -235,9 +243,11 @@ export class DataPoller {
       const errors = [...initialErrors]
 
       if (walletResult?.value !== undefined) this.lastWalletRefreshAt = Date.now()
-      if (checkinResult?.value !== undefined && checkinVersion === this.checkinMutationVersion) {
+      if (checkinResult?.value !== undefined
+        && checkinRequestDate === checkinResponseDate
+        && checkinVersion === this.checkinMutationVersion) {
         this.checkinCacheGeneration = generation
-        this.checkinCacheDate = localDate()
+        this.checkinCacheDate = checkinRequestDate
         const hasCurrentCheckedInMutation = this.checkedInMutationGeneration === generation
           && this.checkedInMutationDate === this.checkinCacheDate
         if (!hasCurrentCheckedInMutation || checkinResult.value.checked_in !== false) {
