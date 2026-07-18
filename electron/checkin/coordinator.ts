@@ -7,8 +7,9 @@ export interface CheckinResult {
 
 interface CheckinPoller {
   captureGeneration(): number
+  captureCheckinDate(): string
   isCheckedIn(): boolean
-  markCheckedIn(expectedGeneration: number): Promise<boolean>
+  markCheckedIn(expectedGeneration: number, expectedDate: string): Promise<boolean>
 }
 
 interface CheckinCoordinatorOptions {
@@ -21,8 +22,8 @@ interface CheckinCoordinatorOptions {
 }
 
 export class CheckinCoordinator {
-  private readonly operations = new Map<number, Promise<CheckinResult>>()
-  private readonly completedAt = new Map<number, number>()
+  private readonly operations = new Map<string, Promise<CheckinResult>>()
+  private readonly completedAt = new Map<string, number>()
   private readonly cooldownMs: number
   private readonly now: () => number
 
@@ -34,8 +35,10 @@ export class CheckinCoordinator {
   checkin(): Promise<CheckinResult> {
     const poller = this.options.getPoller()
     const generation = poller.captureGeneration()
+    const date = poller.captureCheckinDate()
+    const operationKey = `${generation}:${date}`
 
-    const activeOperation = this.operations.get(generation)
+    const activeOperation = this.operations.get(operationKey)
     if (activeOperation) return activeOperation
 
     if (poller.isCheckedIn()) {
@@ -46,17 +49,17 @@ export class CheckinCoordinator {
       })
     }
 
-    const lastCompletedAt = this.completedAt.get(generation) ?? 0
+    const lastCompletedAt = this.completedAt.get(operationKey) ?? 0
     if (this.now() - lastCompletedAt < this.cooldownMs) {
       return Promise.resolve(this.failure('操作过于频繁，请稍后重试'))
     }
 
-    const operation = this.runCheckin(poller, generation)
-    this.operations.set(generation, operation)
+    const operation = this.runCheckin(poller, generation, date)
+    this.operations.set(operationKey, operation)
     void operation.finally(() => {
-      this.completedAt.set(generation, this.now())
-      if (this.operations.get(generation) === operation) this.operations.delete(generation)
-      this.pruneCompletedGenerations(generation)
+      this.completedAt.set(operationKey, this.now())
+      if (this.operations.get(operationKey) === operation) this.operations.delete(operationKey)
+      this.pruneCompletedOperations(operationKey)
     })
     return operation
   }
@@ -64,6 +67,7 @@ export class CheckinCoordinator {
   private async runCheckin(
     poller: CheckinPoller,
     generation: number,
+    date: string,
   ): Promise<CheckinResult> {
     try {
       const session = this.options.getSession()
@@ -72,9 +76,11 @@ export class CheckinCoordinator {
       if (this.options.getSession() !== session) {
         throw new Error('登录状态已变更，请重新签到')
       }
+      if (poller.captureCheckinDate() !== date) throw new Error('日期已变更，请重新签到')
 
       await this.options.submitCheckin(captchaToken)
-      const applied = await poller.markCheckedIn(generation)
+      if (poller.captureCheckinDate() !== date) throw new Error('日期已变更，请重新签到')
+      const applied = await poller.markCheckedIn(generation, date)
       if (!applied) throw new Error('登录状态已变更，请重新签到')
       return { success: true, message: '签到成功' }
     } catch (error) {
@@ -86,11 +92,11 @@ export class CheckinCoordinator {
     return { success: false, message, error: message }
   }
 
-  private pruneCompletedGenerations(currentGeneration: number): void {
+  private pruneCompletedOperations(currentOperation: string): void {
     if (this.completedAt.size <= 8) return
-    for (const generation of this.completedAt.keys()) {
-      if (generation !== currentGeneration && !this.operations.has(generation)) {
-        this.completedAt.delete(generation)
+    for (const operationKey of this.completedAt.keys()) {
+      if (operationKey !== currentOperation && !this.operations.has(operationKey)) {
+        this.completedAt.delete(operationKey)
       }
       if (this.completedAt.size <= 8) break
     }

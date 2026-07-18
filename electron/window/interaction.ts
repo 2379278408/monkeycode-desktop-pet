@@ -18,6 +18,10 @@ export const WINDOW_SIZES: Readonly<Record<WindowMode, Readonly<Size>>> = {
   expanded: { width: 380, height: 430 },
 }
 
+export function canEnableMousePassthrough(mode: WindowMode, dragActive: boolean): boolean {
+  return mode !== 'auth' && !dragActive
+}
+
 export function clampWindowPosition(
   position: Point,
   size: Size,

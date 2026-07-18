@@ -166,23 +166,32 @@ export class DataPoller {
     return this.generation
   }
 
+  captureCheckinDate(): string {
+    return localDate()
+  }
+
   isCheckedIn(): boolean {
     return this.state.checked_in === true
       && this.checkinCacheGeneration === this.generation
       && this.checkinCacheDate === localDate()
   }
 
-  async markCheckedIn(expectedGeneration: number): Promise<boolean> {
-    if (expectedGeneration !== this.generation) return false
+  async markCheckedIn(expectedGeneration: number, expectedDate: string): Promise<boolean> {
+    if (expectedGeneration !== this.generation || expectedDate !== localDate()) return false
     this.checkinMutationVersion += 1
     this.checkinCacheGeneration = this.generation
-    this.checkinCacheDate = localDate()
+    this.checkinCacheDate = expectedDate
     this.checkedInMutationGeneration = this.generation
     this.checkedInMutationDate = this.checkinCacheDate
     this.state = { ...this.state, checked_in: true, task_event: null }
     this.publish()
     await this.runRefresh({ wallet: true })
-    return expectedGeneration === this.generation
+    if (expectedGeneration !== this.generation) return false
+    if (expectedDate !== localDate()) {
+      await this.runRefresh({ checkin: true })
+      return false
+    }
+    return true
   }
 
   private refreshScheduled(): Promise<void> {

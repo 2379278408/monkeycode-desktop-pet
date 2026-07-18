@@ -5,8 +5,9 @@ describe('CheckinCoordinator', () => {
   let generation: number
   let checkedIn: boolean
   let session: string | null
+  let date: string
   let now: number
-  let markCheckedIn: Mock<(expectedGeneration: number) => Promise<boolean>>
+  let markCheckedIn: Mock<(expectedGeneration: number, expectedDate: string) => Promise<boolean>>
   let obtainCaptchaToken: Mock<() => Promise<string>>
   let submitCheckin: Mock<(captchaToken: string) => Promise<void>>
   let coordinator: CheckinCoordinator
@@ -15,9 +16,10 @@ describe('CheckinCoordinator', () => {
     generation = 1
     checkedIn = false
     session = 'session-a'
+    date = '2026-07-18'
     now = 20_000
-    markCheckedIn = vi.fn(async (expectedGeneration: number) => {
-      if (expectedGeneration !== generation) return false
+    markCheckedIn = vi.fn(async (expectedGeneration: number, expectedDate: string) => {
+      if (expectedGeneration !== generation || expectedDate !== date) return false
       checkedIn = true
       return true
     })
@@ -26,6 +28,7 @@ describe('CheckinCoordinator', () => {
     coordinator = new CheckinCoordinator({
       getPoller: () => ({
         captureGeneration: () => generation,
+        captureCheckinDate: () => date,
         isCheckedIn: () => checkedIn,
         markCheckedIn,
       }),
@@ -135,6 +138,40 @@ describe('CheckinCoordinator', () => {
       success: false,
       message: '登录状态已变更，请重新签到',
     }))
+  })
+
+  it('rejects a date change before submitting the captcha token', async () => {
+    obtainCaptchaToken.mockImplementation(async () => {
+      date = '2026-07-19'
+      return 'captcha-token'
+    })
+
+    await expect(coordinator.checkin()).resolves.toEqual(expect.objectContaining({
+      success: false,
+      message: '日期已变更，请重新签到',
+    }))
+    expect(submitCheckin).not.toHaveBeenCalled()
+  })
+
+  it('rejects a date change after submitting the captcha token', async () => {
+    submitCheckin.mockImplementation(async () => {
+      date = '2026-07-19'
+    })
+
+    await expect(coordinator.checkin()).resolves.toEqual(expect.objectContaining({
+      success: false,
+      message: '日期已变更，请重新签到',
+    }))
+    expect(markCheckedIn).not.toHaveBeenCalled()
+  })
+
+  it('does not apply the previous date cooldown to the new date', async () => {
+    await expect(coordinator.checkin()).resolves.toEqual({ success: true, message: '签到成功' })
+    checkedIn = false
+    date = '2026-07-19'
+
+    await expect(coordinator.checkin()).resolves.toEqual({ success: true, message: '签到成功' })
+    expect(submitCheckin).toHaveBeenCalledTimes(2)
   })
 
   it('applies cooldown only after an operation completes', async () => {

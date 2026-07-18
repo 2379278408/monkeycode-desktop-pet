@@ -1,10 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
   anchoredBottomCenterBounds,
+  canEnableMousePassthrough,
   clampWindowPosition,
   isRectangleCoveredByWorkAreas,
   WINDOW_SIZES,
 } from './interaction'
+
+describe('canEnableMousePassthrough', () => {
+  it('allows passthrough only in pet modes without an active drag', () => {
+    expect(canEnableMousePassthrough('collapsed', false)).toBe(true)
+    expect(canEnableMousePassthrough('expanded', false)).toBe(true)
+    expect(canEnableMousePassthrough('auth', false)).toBe(false)
+    expect(canEnableMousePassthrough('collapsed', true)).toBe(false)
+  })
+})
 
 describe('WINDOW_SIZES', () => {
   it('defines every supported window mode', () => {

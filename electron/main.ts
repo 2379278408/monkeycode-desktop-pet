@@ -9,6 +9,7 @@ import { DataPoller } from './poller/data-poller'
 import { TrayManager } from './tray/manager'
 import {
   anchoredBottomCenterBounds,
+  canEnableMousePassthrough,
   clampWindowPosition,
   isRectangleCoveredByWorkAreas,
   WINDOW_SIZES,
@@ -36,6 +37,7 @@ let dragSession: {
   pendingBounds: Rectangle | null
 } | null = null
 let checkinCoordinator: CheckinCoordinator
+let currentWindowMode: WindowMode = 'auth'
 
 function getProductionRendererUrl(): URL {
   return new URL(pathToFileURL(path.join(__dirname, '../dist/index.html')).toString())
@@ -129,6 +131,7 @@ function setWindowMode(mode: WindowMode): void {
   const newBounds = anchoredBottomCenterBounds(oldBounds, WINDOW_SIZES[mode], workArea)
 
   dragSession = null
+  currentWindowMode = mode
   win.setIgnoreMouseEvents(false)
   win.setBounds(newBounds)
 }
@@ -151,6 +154,7 @@ function applyCandidateWindowBounds(candidateBounds: Rectangle): void {
 }
 
 function createPetWindow(): BrowserWindow {
+  currentWindowMode = 'auth'
   const win = new BrowserWindow({
     width: WINDOW_SIZES.auth.width,
     height: WINDOW_SIZES.auth.height,
@@ -383,6 +387,9 @@ function registerIPC(): void {
 
     const win = getPetWindow()
     if (enabled) {
+      if (!canEnableMousePassthrough(currentWindowMode, dragSession !== null)) {
+        throw new Error('当前窗口状态禁止鼠标穿透')
+      }
       win.setIgnoreMouseEvents(true, { forward: true })
     } else {
       win.setIgnoreMouseEvents(false)

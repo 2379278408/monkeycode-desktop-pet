@@ -454,7 +454,7 @@ describe('DataPoller', () => {
     poller.onUpdate((state) => updates.push(state))
     await poller.refreshAll()
 
-    await poller.markCheckedIn(poller.captureGeneration())
+    await poller.markCheckedIn(poller.captureGeneration(), poller.captureCheckinDate())
 
     expect(updates[updates.length - 1]).toEqual(expect.objectContaining({ checked_in: true }))
     expect(api.request.mock.calls.filter(([path]) => path === '/api/v1/users/wallet')).toHaveLength(2)
@@ -464,7 +464,7 @@ describe('DataPoller', () => {
     expect(poller.isCheckedIn()).toBe(false)
 
     await poller.refreshAll()
-    await poller.markCheckedIn(poller.captureGeneration())
+    await poller.markCheckedIn(poller.captureGeneration(), poller.captureCheckinDate())
     expect(poller.isCheckedIn()).toBe(true)
 
     vi.setSystemTime(new Date(2026, 6, 19, 0, 0, 1))
@@ -536,7 +536,7 @@ describe('DataPoller', () => {
 
     const generation = poller.captureGeneration()
     const refreshAll = poller.refreshAll()
-    const markCheckedIn = poller.markCheckedIn(generation)
+    const markCheckedIn = poller.markCheckedIn(generation, poller.captureCheckinDate())
     resolveCheckin?.({ checked_in: false })
     await Promise.all([refreshAll, markCheckedIn])
 
@@ -590,7 +590,7 @@ describe('DataPoller', () => {
     poller.reset()
     resolveCheckin?.()
     await checkinRequest
-    const applied = await poller.markCheckedIn(generation)
+    const applied = await poller.markCheckedIn(generation, poller.captureCheckinDate())
 
     expect(applied).toBe(false)
     expect(api.request).not.toHaveBeenCalled()
@@ -609,12 +609,38 @@ describe('DataPoller', () => {
     })
     const generation = poller.captureGeneration()
 
-    const markCheckedIn = poller.markCheckedIn(generation)
+    const markCheckedIn = poller.markCheckedIn(generation, poller.captureCheckinDate())
     poller.reset()
     resolveWallet?.(wallet)
 
     await expect(markCheckedIn).resolves.toBe(false)
     expect(poller.isCheckedIn()).toBe(false)
+  })
+
+  it('refreshes checkin state when the date changes during wallet refresh', async () => {
+    vi.setSystemTime(new Date(2026, 6, 18, 23, 59, 59))
+    let resolveWallet: ((value: unknown) => void) | undefined
+    api.request.mockImplementation((path: string) => {
+      if (path === '/api/v1/users/wallet') {
+        return new Promise((resolve) => {
+          resolveWallet = resolve
+        })
+      }
+      if (path === '/api/v1/users/wallet/checkin') {
+        return Promise.resolve({ checked_in: false })
+      }
+      throw new Error(`Unexpected path: ${path}`)
+    })
+    const generation = poller.captureGeneration()
+    const date = poller.captureCheckinDate()
+
+    const markCheckedIn = poller.markCheckedIn(generation, date)
+    vi.setSystemTime(new Date(2026, 6, 19, 0, 0, 1))
+    resolveWallet?.(wallet)
+
+    await expect(markCheckedIn).resolves.toBe(false)
+    expect(poller.isCheckedIn()).toBe(false)
+    expect(api.request).toHaveBeenCalledWith('/api/v1/users/wallet/checkin')
   })
 
   it('preserves data and reports offline network state', async () => {
