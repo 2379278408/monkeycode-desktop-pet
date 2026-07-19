@@ -36,6 +36,161 @@ export function pettingDurationSeconds(firstPointAt: number, releasedAt: number)
   return Math.max(0, (releasedAt - firstPointAt) / 1_000)
 }
 
+export interface PendingClickCoordinator {
+  markDue: () => void
+  cancel: () => void
+  settle: (intent: PointerIntent | null) => boolean
+}
+
+export function createPendingClickCoordinator(): PendingClickCoordinator {
+  let due = false
+  return {
+    markDue() {
+      due = true
+    },
+    cancel() {
+      due = false
+    },
+    settle(intent) {
+      const shouldCommit = due && intent !== 'double-click'
+      due = false
+      return shouldCommit
+    },
+  }
+}
+
+export function shouldSettleScheduledClick(
+  intent: PointerIntent | null,
+  hasScheduled: boolean,
+): boolean {
+  return hasScheduled && intent !== 'double-click'
+}
+
+interface PointerReleaseSettlement {
+  shouldCommit: boolean
+  skipCurrentClick: boolean
+}
+
+export function settlePointerRelease(
+  coordinator: PendingClickCoordinator,
+  intent: PointerIntent | null,
+  hasScheduled: boolean,
+  sleepingAtRelease: boolean,
+): PointerReleaseSettlement {
+  if (shouldSettleScheduledClick(intent, hasScheduled)) coordinator.markDue()
+  const shouldCommit = coordinator.settle(intent)
+  return {
+    shouldCommit,
+    skipCurrentClick: shouldCommit && sleepingAtRelease && intent === 'click',
+  }
+}
+
+export function toggleDesiredCardVisibility(desired: { current: boolean }): boolean {
+  desired.current = !desired.current
+  return desired.current
+}
+
+interface DesiredCardVisibilityCommands {
+  getActual: () => boolean
+  getDesired: () => boolean
+  isActive: () => boolean
+  setActual: (value: boolean) => void
+  setDesired: (value: boolean) => void
+  apply: (target: boolean) => Promise<void>
+  onApplied: (target: boolean) => void
+  onFailed: () => void
+}
+
+export async function applyDesiredCardVisibility(
+  commands: DesiredCardVisibilityCommands,
+): Promise<void> {
+  while (commands.isActive() && commands.getActual() !== commands.getDesired()) {
+    const target = commands.getDesired()
+    try {
+      await commands.apply(target)
+    } catch {
+      if (commands.isActive()) {
+        commands.setDesired(commands.getActual())
+        commands.onFailed()
+      }
+      return
+    }
+    if (!commands.isActive()) return
+    commands.setActual(target)
+    commands.onApplied(target)
+  }
+}
+
+interface LatestStoreClickCommands {
+  getState: () => {
+    snapshot: { sleeping: boolean }
+    wake: (now: number) => void
+    interact: (interaction: 'click', now: number) => void
+  }
+  now: () => number
+  clearPreviousClick: () => void
+  showLifeAction: (action: 'waking') => void
+  showInteractionAction: (action: 'waving') => void
+  toggleCard: (restoreAtPointer: true) => void
+}
+
+export function runLatestStoreClick(commands: LatestStoreClickCommands): void {
+  const lifeStore = commands.getState()
+  const now = commands.now()
+  if (lifeStore.snapshot.sleeping) {
+    lifeStore.wake(now)
+    commands.showLifeAction('waking')
+    commands.clearPreviousClick()
+    return
+  }
+  lifeStore.interact('click', now)
+  commands.showInteractionAction('waving')
+  commands.toggleCard(true)
+}
+
+interface LatestStoreDoubleClickCommands {
+  getState: () => {
+    snapshot: { sleeping: boolean }
+    wake: (now: number) => void
+    interact: (interaction: 'double-click', now: number) => void
+  }
+  now: () => number
+  clearPreviousClick: () => void
+  showLifeAction: (action: 'waking') => void
+  showInteractionAction: (action: 'celebrating') => void
+}
+
+export function runLatestStoreDoubleClick(commands: LatestStoreDoubleClickCommands): void {
+  const lifeStore = commands.getState()
+  const now = commands.now()
+  if (lifeStore.snapshot.sleeping) {
+    lifeStore.wake(now)
+    commands.showLifeAction('waking')
+    commands.clearPreviousClick()
+    return
+  }
+  lifeStore.interact('double-click', now)
+  commands.showInteractionAction('celebrating')
+}
+
+export async function finishDragWithPendingClick(
+  finish: () => Promise<boolean>,
+  shouldCommit: boolean,
+  commitClick: () => void,
+  complete: (finished: boolean) => void,
+): Promise<void> {
+  let finished = false
+  try {
+    finished = await finish()
+  } catch {}
+
+  try {
+    if (shouldCommit) commitClick()
+  } finally {
+    complete(finished)
+  }
+}
+
 export function taskResultEventKey(event: TaskTerminalEvent): string {
   return JSON.stringify([event.task_id, event.status, event.occurred_at])
 }
@@ -132,6 +287,9 @@ function createPassthroughController(): PassthroughController {
 
 export function PetShell({ onLogout }: PetShellProps) {
   const [showCard, setShowCard] = useState(false)
+  const actualShowCardRef = useRef(showCard)
+  actualShowCardRef.current = showCard
+  const desiredShowCardRef = useRef(showCard)
   const [interactionAction, setInteractionAction] = useState<PetInteractionAction | null>(null)
   const [lifeAction, setLifeAction] = useState<PetLifeAction | null>(null)
   const petState = usePetStore((state) => state.petState)
@@ -151,17 +309,26 @@ export function PetShell({ onLogout }: PetShellProps) {
   const latestPointerScreenPositionRef = useRef<ScreenPoint | null>(null)
   const previousClickAtRef = useRef<number | null>(null)
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingClickCoordinatorRef = useRef(createPendingClickCoordinator())
   const interactionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lifeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const draggingRef = useRef(false)
   const modeTransitionRef = useRef(false)
-  const modeGenerationRef = useRef(0)
+  const cardModePumpRef = useRef<Promise<void> | null>(null)
+  const restoreCardAtPointerRef = useRef(false)
   const mountedRef = useRef(true)
   const passthroughControllerRef = useRef<PassthroughController | null>(null)
   if (!passthroughControllerRef.current) {
     passthroughControllerRef.current = createPassthroughController()
   }
   const passthroughController = passthroughControllerRef.current
+
+  const cancelPendingClick = useCallback(() => {
+    if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
+    clickTimerRef.current = null
+    previousClickAtRef.current = null
+    pendingClickCoordinatorRef.current.cancel()
+  }, [])
 
   const clearInteractionAction = useCallback(() => {
     if (interactionTimerRef.current) clearTimeout(interactionTimerRef.current)
@@ -223,6 +390,7 @@ export function PetShell({ onLogout }: PetShellProps) {
     onSettled: () => void,
   ) => {
     if (session.closing) return
+    if (terminal === 'cancel') cancelPendingClick()
     session.closing = true
     if (session.holdTimer) {
       clearTimeout(session.holdTimer)
@@ -236,7 +404,7 @@ export function PetShell({ onLogout }: PetShellProps) {
       draggingRef.current = false
       onSettled()
     }).catch(() => {})
-  }, [])
+  }, [cancelPendingClick])
 
   useEffect(() => {
     const unsubscribe = window.electronAPI.onStateUpdate((data) => {
@@ -275,10 +443,7 @@ export function PetShell({ onLogout }: PetShellProps) {
       mountedRef.current = false
       window.removeEventListener('mousemove', handleMouseMove)
       const session = pointerSessionRef.current
-      if (clickTimerRef.current) {
-        clearTimeout(clickTimerRef.current)
-        clickTimerRef.current = null
-      }
+      cancelPendingClick()
       if (interactionTimerRef.current) clearTimeout(interactionTimerRef.current)
       if (lifeTimerRef.current) clearTimeout(lifeTimerRef.current)
       interactionTimerRef.current = null
@@ -301,26 +466,8 @@ export function PetShell({ onLogout }: PetShellProps) {
         void passthroughController.request(false)
       }
       modeTransitionRef.current = false
-      modeGenerationRef.current += 1
     }
-  }, [passthroughController, restorePassthroughAt, setMousePassthrough])
-
-  const finishDrag = useCallback((session: PointerSession) => {
-    if (session.closing) return
-    session.closing = true
-    if (session.holdTimer) {
-      clearTimeout(session.holdTimer)
-      session.holdTimer = null
-    }
-    void session.controller.finish().then((finished) => {
-      if (pointerSessionRef.current === session) pointerSessionRef.current = null
-      draggingRef.current = false
-      if (!mountedRef.current) return
-      if (finished) showInteractionAction('dropping')
-      else clearInteractionAction()
-      restorePassthroughAtLatestPointer()
-    }).catch(() => {})
-  }, [clearInteractionAction, restorePassthroughAtLatestPointer, showInteractionAction])
+  }, [cancelPendingClick, passthroughController, restorePassthroughAt, setMousePassthrough])
 
   const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.button !== 0
@@ -439,39 +586,87 @@ export function PetShell({ onLogout }: PetShellProps) {
   }
 
   const toggleCard = useCallback((restoreAtPointer = false) => {
-    const nextShowCard = !showCard
-    const generation = modeGenerationRef.current + 1
-    modeGenerationRef.current = generation
+    toggleDesiredCardVisibility(desiredShowCardRef)
+    restoreCardAtPointerRef.current ||= restoreAtPointer
     modeTransitionRef.current = true
+    if (cardModePumpRef.current) return
 
-    const restoreAfterModeChange = () => {
-      if (!restoreAtPointer) {
-        setMousePassthrough(false)
-        return
-      }
-      restorePassthroughAtLatestPointer()
-    }
-
-    const changeMode = async () => {
+    const runPump = async () => {
       await passthroughController.request(false)
-      if (!mountedRef.current || modeGenerationRef.current !== generation) return
-
-      try {
-        await window.electronAPI.setWindowMode(nextShowCard ? 'expanded' : 'collapsed')
-        if (!mountedRef.current || modeGenerationRef.current !== generation) return
-        passthroughController.markApplied(false)
-        setShowCard(nextShowCard)
-        modeTransitionRef.current = false
-        restoreAfterModeChange()
-      } catch {
-        if (!mountedRef.current || modeGenerationRef.current !== generation) return
-        modeTransitionRef.current = false
-        passthroughController.markUnknown()
-        restoreAfterModeChange()
-      }
+      if (!mountedRef.current) return
+      await applyDesiredCardVisibility({
+        getActual: () => actualShowCardRef.current,
+        getDesired: () => desiredShowCardRef.current,
+        isActive: () => mountedRef.current,
+        setActual: (value) => {
+          actualShowCardRef.current = value
+        },
+        setDesired: (value) => {
+          desiredShowCardRef.current = value
+        },
+        apply: (target) => window.electronAPI.setWindowMode(
+          target ? 'expanded' : 'collapsed',
+        ),
+        onApplied: (target) => {
+          setShowCard(target)
+          passthroughController.markApplied(false)
+        },
+        onFailed: () => {
+          passthroughController.markUnknown()
+        },
+      })
     }
-    void changeMode()
-  }, [passthroughController, restorePassthroughAtLatestPointer, setMousePassthrough, showCard])
+
+    const pump = runPump()
+    cardModePumpRef.current = pump
+    void pump.finally(() => {
+      if (cardModePumpRef.current !== pump) return
+      cardModePumpRef.current = null
+      if (!mountedRef.current) return
+      modeTransitionRef.current = false
+      const restoreAtLatestPointer = restoreCardAtPointerRef.current
+      restoreCardAtPointerRef.current = false
+      if (restoreAtLatestPointer) restorePassthroughAtLatestPointer()
+      else setMousePassthrough(false)
+    }).catch(() => {})
+  }, [passthroughController, restorePassthroughAtLatestPointer, setMousePassthrough])
+
+  const commitClick = useCallback(() => {
+    runLatestStoreClick({
+      getState: usePetLifeStore.getState,
+      now: Date.now,
+      clearPreviousClick: () => {
+        previousClickAtRef.current = null
+      },
+      showLifeAction,
+      showInteractionAction,
+      toggleCard,
+    })
+  }, [showInteractionAction, showLifeAction, toggleCard])
+
+  const finishDrag = useCallback((session: PointerSession, shouldCommitClick: boolean) => {
+    if (session.closing) return
+    session.closing = true
+    if (session.holdTimer) {
+      clearTimeout(session.holdTimer)
+      session.holdTimer = null
+    }
+    void finishDragWithPendingClick(
+      session.controller.finish,
+      shouldCommitClick,
+      () => {
+        if (mountedRef.current) commitClick()
+      },
+      (finished) => {
+        if (pointerSessionRef.current === session) pointerSessionRef.current = null
+        draggingRef.current = false
+        if (!mountedRef.current) return
+        if (finished) showInteractionAction('dropping')
+        else clearInteractionAction()
+        restorePassthroughAtLatestPointer()
+      },
+    ).catch(() => {})
+  }, [clearInteractionAction, commitClick, restorePassthroughAtLatestPointer, showInteractionAction])
 
   const handlePointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     const session = pointerSessionRef.current
@@ -484,17 +679,28 @@ export function PetShell({ onLogout }: PetShellProps) {
       at: event.timeStamp,
     })
     const intent = classifyReleaseIntent(session.gesture)
+    const releasedAt = event.timeStamp
+    const sleepingAtRelease = usePetLifeStore.getState().snapshot.sleeping
     if (intent === 'drag' && !session.dragging && session.controller.startDragging()) {
       session.dragging = true
       draggingRef.current = true
     }
+    const hasScheduledClick = clickTimerRef.current !== null
+    if (hasScheduledClick || intent === 'double-click') {
+      cancelPendingClick()
+    }
+    const terminal = settlePointerRelease(
+      pendingClickCoordinatorRef.current,
+      intent,
+      hasScheduledClick,
+      sleepingAtRelease,
+    )
     if (session.dragging) {
-      finishDrag(session)
+      finishDrag(session, terminal.shouldCommit)
       releasePointer(event)
       return
     }
 
-    const releasedAt = event.timeStamp
     const runIntent = (releasedIntent: PointerIntent | null) => {
       if (releasedIntent === null) {
         restorePassthroughAtLatestPointer()
@@ -511,31 +717,43 @@ export function PetShell({ onLogout }: PetShellProps) {
         return
       }
       if (releasedIntent === 'double-click') {
-        if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
-        clickTimerRef.current = null
-        previousClickAtRef.current = null
-        usePetLifeStore.getState().interact('double-click', Date.now())
-        showInteractionAction('celebrating')
+        cancelPendingClick()
+        runLatestStoreDoubleClick({
+          getState: usePetLifeStore.getState,
+          now: Date.now,
+          clearPreviousClick: () => {
+            previousClickAtRef.current = null
+          },
+          showLifeAction,
+          showInteractionAction,
+        })
         restorePassthroughAtLatestPointer()
         return
       }
       if (releasedIntent === 'click') {
+        if (sleepingAtRelease) {
+          cancelPendingClick()
+          commitClick()
+          restorePassthroughAtLatestPointer()
+          return
+        }
+        cancelPendingClick()
         previousClickAtRef.current = releasedAt
-        if (clickTimerRef.current) clearTimeout(clickTimerRef.current)
-        clickTimerRef.current = setTimeout(() => {
+        const timer = setTimeout(() => {
+          if (clickTimerRef.current !== timer) return
           clickTimerRef.current = null
-          previousClickAtRef.current = null
-          if (!mountedRef.current) return
-          const lifeStore = usePetLifeStore.getState()
-          if (lifeStore.snapshot.sleeping) {
-            lifeStore.wake(Date.now())
-            showLifeAction('waking')
+          if (!mountedRef.current || pointerSessionRef.current?.closing) {
+            cancelPendingClick()
             return
           }
-          lifeStore.interact('click', Date.now())
-          showInteractionAction('waving')
-          toggleCard(true)
+          previousClickAtRef.current = null
+          if (pointerSessionRef.current) {
+            pendingClickCoordinatorRef.current.markDue()
+            return
+          }
+          commitClick()
         }, 301)
+        clickTimerRef.current = timer
       }
     }
     if (session.holdTimer) clearTimeout(session.holdTimer)
@@ -544,9 +762,11 @@ export function PetShell({ onLogout }: PetShellProps) {
     pointerSessionRef.current = null
     draggingRef.current = false
     void session.controller.cancel().catch(() => {})
-    runIntent(intent)
+    if (terminal.shouldCommit) commitClick()
+    if (terminal.skipCurrentClick) restorePassthroughAtLatestPointer()
+    else runIntent(intent)
     releasePointer(event)
-  }, [finishDrag, restorePassthroughAtLatestPointer, showInteractionAction, showLifeAction, toggleCard])
+  }, [cancelPendingClick, commitClick, finishDrag, restorePassthroughAtLatestPointer, showInteractionAction, showLifeAction])
 
   const cancelPointerSession = useCallback((
     event: ReactPointerEvent<HTMLDivElement>,
@@ -554,7 +774,9 @@ export function PetShell({ onLogout }: PetShellProps) {
   ) => {
     const session = pointerSessionRef.current
     if (!session || session.pointerId !== event.pointerId) return
+    if (session.closing) return
     latestPointerScreenPositionRef.current = { x: event.screenX, y: event.screenY }
+    cancelPendingClick()
 
     closePointerSession(session, 'cancel', () => {
       if (mountedRef.current) {
@@ -563,7 +785,7 @@ export function PetShell({ onLogout }: PetShellProps) {
       }
     })
     if (shouldReleasePointer) releasePointer(event)
-  }, [clearInteractionAction, closePointerSession, restorePassthroughAtLatestPointer])
+  }, [cancelPendingClick, clearInteractionAction, closePointerSession, restorePassthroughAtLatestPointer])
 
   const handlePointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     cancelPointerSession(event, true)

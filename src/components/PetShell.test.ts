@@ -5,10 +5,18 @@ import { PetState } from '../stores/pet-store'
 import {
   PET_LIFE_TICK_MS,
   PetShell,
+  applyDesiredCardVisibility,
+  createPendingClickCoordinator,
+  finishDragWithPendingClick,
   petActionDuration,
   pettingDurationSeconds,
+  runLatestStoreDoubleClick,
+  runLatestStoreClick,
+  settlePointerRelease,
+  shouldSettleScheduledClick,
   startPetLifeClock,
   taskResultEventKey,
+  toggleDesiredCardVisibility,
 } from './PetShell'
 
 const storeHarness = vi.hoisted(() => ({ petState: 'IDLE' }))
@@ -32,6 +40,16 @@ const lifeStoreHarness = vi.hoisted(() => ({
   tick: vi.fn(),
   recordTaskResult: vi.fn(),
 }))
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, reject, resolve }
+}
 
 vi.mock('../stores/pet-store', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../stores/pet-store')>()
@@ -134,5 +152,499 @@ describe('PetShell life integration helpers', () => {
   it('clamps petting time to non-negative seconds', () => {
     expect(pettingDurationSeconds(1_350, 3_500)).toBe(2.15)
     expect(pettingDurationSeconds(3_500, 1_000)).toBe(0)
+  })
+})
+
+describe('pending click coordination', () => {
+  it('defers a due click until a non-double pointer session settles', () => {
+    const coordinator = createPendingClickCoordinator()
+    coordinator.markDue()
+
+    expect(coordinator.settle('pet')).toBe(true)
+    expect(coordinator.settle('pet')).toBe(false)
+  })
+
+  it.each([
+    ['double-click', false],
+    ['click', true],
+    ['pet', true],
+    [null, true],
+  ] as const)('settles a due first click for %s with %s', (intent, expected) => {
+    vi.useFakeTimers()
+    try {
+      const coordinator = createPendingClickCoordinator()
+      coordinator.markDue()
+
+      expect(coordinator.settle(intent)).toBe(expected)
+      expect(coordinator.settle(intent)).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('clears a due click on cancellation', () => {
+    vi.useFakeTimers()
+    try {
+      const coordinator = createPendingClickCoordinator()
+      coordinator.markDue()
+      coordinator.cancel()
+
+      expect(coordinator.settle('pet')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not commit while the second pointer session is active', async () => {
+    vi.useFakeTimers()
+    try {
+      const commit = vi.fn()
+      const coordinator = createPendingClickCoordinator()
+      const activeSession = { current: true }
+      setTimeout(() => {
+        if (activeSession.current) coordinator.markDue()
+        else commit()
+      }, 301)
+
+      await vi.advanceTimersByTimeAsync(301)
+      expect(commit).not.toHaveBeenCalled()
+
+      activeSession.current = false
+      if (coordinator.settle('pet')) commit()
+      expect(commit).toHaveBeenCalledOnce()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('prevents a cancelled timer from committing after its deadline', async () => {
+    vi.useFakeTimers()
+    try {
+      const commit = vi.fn()
+      const coordinator = createPendingClickCoordinator()
+      const timer = setTimeout(commit, 301)
+
+      clearTimeout(timer)
+      coordinator.cancel()
+      await vi.advanceTimersByTimeAsync(301)
+
+      expect(commit).not.toHaveBeenCalled()
+      expect(coordinator.settle('click')).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([
+    ['before deadline', 'click', 100],
+    ['before deadline', 'pet', 100],
+    ['before deadline', null, 100],
+    ['before deadline', 'drag', 100],
+    ['after deadline', 'click', 400],
+    ['after deadline', 'pet', 400],
+    ['after deadline', null, 400],
+    ['after deadline', 'drag', 400],
+  ] as const)(
+    'settles one scheduled first click %s before a second %s intent',
+    async (_timing, intent, elapsed) => {
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(0)
+        const events: string[] = []
+        const coordinator = createPendingClickCoordinator()
+        const firstTimer = setTimeout(() => events.push('stale-first-timer'), 301)
+        vi.setSystemTime(elapsed)
+
+        const hasScheduled = vi.getTimerCount() === 1
+        if (shouldSettleScheduledClick(intent, hasScheduled)) {
+          clearTimeout(firstTimer)
+        }
+        const terminal = settlePointerRelease(coordinator, intent, hasScheduled, false)
+        if (intent === 'drag') {
+          await finishDragWithPendingClick(
+            () => Promise.resolve(true),
+            terminal.shouldCommit,
+            () => events.push('first-click'),
+            () => events.push('drag-complete'),
+          )
+        } else {
+          if (terminal.shouldCommit) events.push('first-click')
+          events.push(intent === null ? 'null-release' : intent)
+        }
+
+        if (intent === 'click') setTimeout(() => events.push('second-click'), 301)
+        await vi.advanceTimersByTimeAsync(300)
+
+        expect(events).toEqual(intent === 'drag'
+          ? ['first-click', 'drag-complete']
+          : ['first-click', intent === null ? 'null-release' : intent])
+        expect(events.filter((event) => event === 'first-click')).toHaveLength(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    },
+  )
+
+  it.each([100, 400])(
+    'cancels a scheduled first click on double-click at %sms',
+    (elapsed) => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(0)
+      const coordinator = createPendingClickCoordinator()
+      const timer = setTimeout(vi.fn(), 301)
+      vi.setSystemTime(elapsed)
+      const hasScheduled = vi.getTimerCount() === 1
+
+      expect(shouldSettleScheduledClick('double-click', hasScheduled)).toBe(false)
+      clearTimeout(timer)
+      expect(settlePointerRelease(
+        coordinator,
+        'double-click',
+        hasScheduled,
+        false,
+      ).shouldCommit).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+    },
+  )
+})
+
+describe('latest store click execution', () => {
+  it('reads the latest sleeping state and wakes immediately in order', () => {
+    vi.useFakeTimers()
+    try {
+      const events: string[] = []
+      let sleeping = false
+      const getState = vi.fn(() => ({
+        snapshot: { sleeping },
+        wake: vi.fn(() => events.push('wake')),
+        interact: vi.fn(() => events.push('interact')),
+      }))
+      const commands = {
+        getState,
+        now: () => 42,
+        clearPreviousClick: vi.fn(() => events.push('clear-previous')),
+        showLifeAction: vi.fn(() => events.push('waking-action')),
+        showInteractionAction: vi.fn(() => events.push('wave-action')),
+        toggleCard: vi.fn(() => events.push('toggle-card')),
+      }
+
+      sleeping = true
+      runLatestStoreClick(commands)
+
+      expect(getState).toHaveBeenCalledOnce()
+      expect(events).toEqual(['wake', 'waking-action', 'clear-previous'])
+      expect(commands.showInteractionAction).not.toHaveBeenCalled()
+      expect(commands.toggleCard).not.toHaveBeenCalled()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('interacts, waves, and toggles the card when awake', () => {
+    vi.useFakeTimers()
+    try {
+      const events: string[] = []
+      const interact = vi.fn(() => events.push('interact'))
+      const toggleCard = vi.fn(() => events.push('toggle-card'))
+      runLatestStoreClick({
+        getState: () => ({
+          snapshot: { sleeping: false },
+          wake: vi.fn(() => events.push('wake')),
+          interact,
+        }),
+        now: () => 73,
+        clearPreviousClick: vi.fn(() => events.push('clear-previous')),
+        showLifeAction: vi.fn(() => events.push('waking-action')),
+        showInteractionAction: vi.fn(() => events.push('wave-action')),
+        toggleCard,
+      })
+
+      expect(interact).toHaveBeenCalledWith('click', 73)
+      expect(events).toEqual(['interact', 'wave-action', 'toggle-card'])
+      expect(toggleCard).toHaveBeenCalledWith(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('wakes a sleeping classified double-click without celebrating', () => {
+    vi.useFakeTimers()
+    try {
+      const events: string[] = []
+      runLatestStoreDoubleClick({
+        getState: () => ({
+          snapshot: { sleeping: true },
+          wake: vi.fn(() => events.push('wake')),
+          interact: vi.fn(() => events.push('double-interact')),
+        }),
+        now: () => 91,
+        clearPreviousClick: vi.fn(() => events.push('clear-previous')),
+        showLifeAction: vi.fn(() => events.push('waking-action')),
+        showInteractionAction: vi.fn(() => events.push('celebrating')),
+      })
+
+      expect(events).toEqual(['wake', 'waking-action', 'clear-previous'])
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([
+    ['fast scheduled', true, false],
+    ['timer already due', false, true],
+  ] as const)('handles a %s sleeping click with one wake', (_name, hasScheduled, alreadyDue) => {
+    vi.useFakeTimers()
+    try {
+      const events: string[] = []
+      const coordinator = createPendingClickCoordinator()
+      if (alreadyDue) coordinator.markDue()
+      const terminal = settlePointerRelease(coordinator, 'click', hasScheduled, true)
+      const commands = {
+        getState: () => ({
+          snapshot: { sleeping: true },
+          wake: vi.fn(() => events.push('wake')),
+          interact: vi.fn(() => events.push('interact')),
+        }),
+        now: () => 92,
+        clearPreviousClick: vi.fn(() => events.push('clear-previous')),
+        showLifeAction: vi.fn(() => events.push('waking-action')),
+        showInteractionAction: vi.fn(() => events.push('waving')),
+        toggleCard: vi.fn(() => events.push('toggle')),
+      }
+
+      if (terminal.shouldCommit) runLatestStoreClick(commands)
+      if (!terminal.skipCurrentClick) runLatestStoreClick(commands)
+
+      expect(events).toEqual(['wake', 'waking-action', 'clear-previous'])
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('card visibility coordination', () => {
+  it('reverses the desired state across toggles before state commits', () => {
+    const desired = { current: false }
+
+    expect(toggleDesiredCardVisibility(desired)).toBe(true)
+    expect(toggleDesiredCardVisibility(desired)).toBe(false)
+  })
+
+  it('serializes a reversed target and rolls back the failed latest target', async () => {
+    const state = { actual: false, desired: true, shown: false }
+    const calls: boolean[] = []
+    const deferred: Array<ReturnType<typeof createDeferred<void>>> = []
+    let concurrency = 0
+    let maxConcurrency = 0
+    const operation = applyDesiredCardVisibility({
+      getActual: () => state.actual,
+      getDesired: () => state.desired,
+      isActive: () => true,
+      setActual: (value) => { state.actual = value },
+      setDesired: (value) => { state.desired = value },
+      apply: (target) => {
+        calls.push(target)
+        concurrency += 1
+        maxConcurrency = Math.max(maxConcurrency, concurrency)
+        const next = createDeferred<void>()
+        deferred.push(next)
+        return next.promise.finally(() => { concurrency -= 1 })
+      },
+      onApplied: (target) => { state.shown = target },
+      onFailed: vi.fn(),
+    })
+
+    expect(calls).toEqual([true])
+    state.desired = false
+    deferred[0].resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(calls).toEqual([true, false])
+    deferred[1].reject(new Error('collapse failed'))
+    await operation
+
+    expect(state).toEqual({ actual: true, desired: true, shown: true })
+    expect(maxConcurrency).toBe(1)
+  })
+
+  it('serializes two successful targets and ends collapsed', async () => {
+    const state = { actual: false, desired: true, shown: false }
+    const calls: boolean[] = []
+    const deferred: Array<ReturnType<typeof createDeferred<void>>> = []
+    let concurrency = 0
+    let maxConcurrency = 0
+    const operation = applyDesiredCardVisibility({
+      getActual: () => state.actual,
+      getDesired: () => state.desired,
+      isActive: () => true,
+      setActual: (value) => { state.actual = value },
+      setDesired: (value) => { state.desired = value },
+      apply: (target) => {
+        calls.push(target)
+        concurrency += 1
+        maxConcurrency = Math.max(maxConcurrency, concurrency)
+        const next = createDeferred<void>()
+        deferred.push(next)
+        return next.promise.finally(() => { concurrency -= 1 })
+      },
+      onApplied: (target) => { state.shown = target },
+      onFailed: vi.fn(),
+    })
+
+    state.desired = false
+    deferred[0].resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    deferred[1].resolve()
+    await operation
+
+    expect(calls).toEqual([true, false])
+    expect(state).toEqual({ actual: false, desired: false, shown: false })
+    expect(maxConcurrency).toBe(1)
+  })
+
+  it('keeps the collapsed state when the first target fails', async () => {
+    const state = { actual: false, desired: true, shown: false }
+    const failed = vi.fn()
+
+    await applyDesiredCardVisibility({
+      getActual: () => state.actual,
+      getDesired: () => state.desired,
+      isActive: () => true,
+      setActual: (value) => { state.actual = value },
+      setDesired: (value) => { state.desired = value },
+      apply: () => Promise.reject(new Error('expand failed')),
+      onApplied: (target) => { state.shown = target },
+      onFailed: failed,
+    })
+
+    expect(state).toEqual({ actual: false, desired: false, shown: false })
+    expect(failed).toHaveBeenCalledOnce()
+  })
+
+  it('stops after an in-flight target settles following unmount', async () => {
+    const state = { actual: false, desired: true, shown: false }
+    const target = createDeferred<void>()
+    const applied = vi.fn()
+    let active = true
+    const operation = applyDesiredCardVisibility({
+      getActual: () => state.actual,
+      getDesired: () => state.desired,
+      isActive: () => active,
+      setActual: (value) => { state.actual = value },
+      setDesired: (value) => { state.desired = value },
+      apply: () => target.promise,
+      onApplied: applied,
+      onFailed: vi.fn(),
+    })
+
+    active = false
+    target.resolve()
+    await operation
+
+    expect(state).toEqual({ actual: false, desired: true, shown: false })
+    expect(applied).not.toHaveBeenCalled()
+  })
+})
+
+describe('drag pending click settlement', () => {
+  it.each([
+    ['success', true, false],
+    ['failure', false, false],
+    ['rejection', false, true],
+  ] as const)('commits once before %s terminal cleanup', async (_name, result, rejects) => {
+    vi.useFakeTimers()
+    try {
+      const events: string[] = []
+      const finish = vi.fn(() => new Promise<boolean>((resolve, reject) => {
+        setTimeout(() => {
+          if (rejects) reject(new Error('finish failed'))
+          else resolve(result)
+        }, 10)
+      }))
+      const operation = finishDragWithPendingClick(
+        finish,
+        true,
+        () => events.push('commit'),
+        (finished) => events.push(finished ? 'dropping' : 'clear'),
+      )
+
+      await vi.advanceTimersByTimeAsync(10)
+      await operation
+
+      expect(events).toEqual(['commit', result && !rejects ? 'dropping' : 'clear'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not commit a cancelled pending click', async () => {
+    vi.useFakeTimers()
+    try {
+      const coordinator = createPendingClickCoordinator()
+      const commit = vi.fn()
+      coordinator.markDue()
+      coordinator.cancel()
+
+      await finishDragWithPendingClick(
+        () => Promise.resolve(true),
+        coordinator.settle('drag'),
+        commit,
+        vi.fn(),
+      )
+
+      expect(commit).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('completes cleanup without committing after unmount', async () => {
+    vi.useFakeTimers()
+    try {
+      const mounted = { current: true }
+      const events: string[] = []
+      const operation = finishDragWithPendingClick(
+        () => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 10)),
+        true,
+        () => {
+          if (mounted.current) events.push('commit')
+        },
+        () => events.push('complete'),
+      )
+      mounted.current = false
+
+      await vi.advanceTimersByTimeAsync(10)
+      await operation
+
+      expect(events).toEqual(['complete'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('still completes cleanup and lets the caller contain a commit error', async () => {
+    const complete = vi.fn()
+    const caught = vi.fn()
+
+    await finishDragWithPendingClick(
+      () => Promise.resolve(true),
+      true,
+      () => { throw new Error('commit failed') },
+      complete,
+    ).catch(caught)
+
+    expect(caught).toHaveBeenCalledOnce()
+    expect(complete).toHaveBeenCalledWith(true)
   })
 })

@@ -276,7 +276,7 @@ git commit -m "fix: 修正桌宠生活动作优先级"
 - Consumes: `PointerIntent`、`usePetLifeStore.getState()`、`toggleCard()` 和拖动终端结果。
 - Produces: `PendingClickCoordinator` 纯状态协调器和稳定的睡眠唤醒语义。
 
-- [ ] **Step 1: 添加单击协调器失败测试**
+- [x] **Step 1: 添加单击协调器失败测试**
 
 在 `PetShell.tsx` 导出无 React 依赖的协调器：
 
@@ -315,13 +315,13 @@ it('clears a due click on cancellation', () => {
 })
 ```
 
-- [ ] **Step 2: 运行协调器测试确认失败**
+- [x] **Step 2: 运行协调器测试确认失败**
 
 Run: `npx vitest run src/components/PetShell.test.ts`
 
 Expected: FAIL，提示 `createPendingClickCoordinator` 不存在。
 
-- [ ] **Step 3: 实现最小待提交状态协调器**
+- [x] **Step 3: 实现最小待提交状态协调器**
 
 在 `PetShell.tsx` 组件外实现闭包：
 
@@ -342,7 +342,7 @@ export function createPendingClickCoordinator(): PendingClickCoordinator {
 
 组件以 `useRef(createPendingClickCoordinator())` 持有单个协调器，卸载时调用 `cancel()`。
 
-- [ ] **Step 4: 提取最新状态单击提交函数**
+- [x] **Step 4: 提取最新状态单击提交函数**
 
 新增稳定 `commitClick` 回调，每次执行读取最新 store：
 
@@ -363,7 +363,7 @@ const commitClick = useCallback(() => {
 
 睡眠点击在 `releasedIntent === 'click'` 分支立即调用 `commitClick()`，并跳过 301ms timer。
 
-- [ ] **Step 5: 在计时器和所有终端路径接入协调器**
+- [x] **Step 5: 在计时器和所有终端路径接入协调器**
 
 清醒单击计时器到期时：
 
@@ -379,7 +379,7 @@ commitClick()
 
 双击分支继续清除 `clickTimerRef`，并调用 coordinator `cancel()`。睡眠状态若到达双击分支，则调用 `wake` 和 `waking`，清除双击候选并跳过庆祝。
 
-- [ ] **Step 6: 增加 fake timer 时序测试**
+- [x] **Step 6: 增加 fake timer 时序测试**
 
 使用协调器与 `vi.useFakeTimers()` 覆盖：
 
@@ -404,13 +404,13 @@ it('does not commit while the second pointer session is active', async () => {
 
 另加纯函数或协调器测试覆盖拖动 finish 成功、finish 失败和 cancel 均只消费一次；睡眠提交通过注入 store commands 的 helper 验证 `wake` 先于动作回调。
 
-- [ ] **Step 7: 运行手势、拖动和生命 store 定向测试**
+- [x] **Step 7: 运行手势、拖动和生命 store 定向测试**
 
 Run: `npx vitest run src/components/PetShell.test.ts src/lib/pointer-gesture.test.ts src/lib/drag-controller.test.ts src/stores/pet-life-store.test.ts`
 
 Expected: 四个测试文件全部 PASS，定时器测试恢复真实 timers。
 
-- [ ] **Step 8: 提交手势时序修正**
+- [x] **Step 8: 提交手势时序修正**
 
 ```bash
 git add src/components/PetShell.tsx src/components/PetShell.test.ts
