@@ -58,9 +58,25 @@ function assertNever(value: never): never {
   throw new Error(`Unhandled business state: ${String(value)}`)
 }
 
+const INTERACTION_PRIORITIES: Record<PetInteractionAction, 'high' | 'ordinary'> = {
+  waving: 'ordinary',
+  celebrating: 'ordinary',
+  petting: 'high',
+  dragging: 'high',
+  dropping: 'high',
+}
+
+function isHighPriorityInteraction(
+  action: PetInteractionAction | null,
+): action is Extract<PetInteractionAction, 'dragging' | 'petting' | 'dropping'> {
+  return action !== null && INTERACTION_PRIORITIES[action] === 'high'
+}
+
 export function selectPetAction(inputs: PetActionInputs): PetAction {
-  return inputs.interaction
-    ?? inputs.lifeAction
+  if (isHighPriorityInteraction(inputs.interaction)) return inputs.interaction
+
+  return inputs.lifeAction
+    ?? inputs.interaction
     ?? selectBusinessAction(inputs.business)
     ?? inputs.form
 }

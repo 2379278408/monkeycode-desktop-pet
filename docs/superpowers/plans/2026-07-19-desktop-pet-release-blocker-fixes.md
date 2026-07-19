@@ -196,7 +196,7 @@ git commit -m "fix: 加固桌宠生命状态 IPC 校验"
 - Consumes: `PetActionInputs` 和既有 17 个 `PetAction`。
 - Produces: `selectPetAction(inputs)` 的五层确定性优先级。
 
-- [ ] **Step 1: 添加优先级排列失败测试**
+- [x] **Step 1: 添加优先级排列失败测试**
 
 在 `src/lib/pet-action.test.ts` 将旧优先级用例替换为明确排列：
 
@@ -223,13 +223,13 @@ it('keeps ordinary interaction above business and form', () => {
 })
 ```
 
-- [ ] **Step 2: 运行测试确认生活动作优先级失败**
+- [x] **Step 2: 运行测试确认生活动作优先级失败**
 
 Run: `npx vitest run src/lib/pet-action.test.ts`
 
 Expected: FAIL，`waving + waking` 实际返回 `waving`。
 
-- [ ] **Step 3: 实现高低互动分层**
+- [x] **Step 3: 实现高低互动分层**
 
 在 `src/lib/pet-action.ts` 增加窄化函数并调整选择顺序：
 
@@ -251,13 +251,13 @@ export function selectPetAction(inputs: PetActionInputs): PetAction {
 
 删除 `MonkeySprite.tsx` 中已经过期的 Task 7 注释，保持资源映射不变。
 
-- [ ] **Step 4: 运行动作与 Sprite 测试**
+- [x] **Step 4: 运行动作与 Sprite 测试**
 
 Run: `npx vitest run src/lib/pet-action.test.ts src/components/MonkeySprite.test.ts src/components/PetShell.test.ts`
 
 Expected: 三个测试文件全部 PASS，17 动作穷尽检查保持通过。
 
-- [ ] **Step 5: 提交优先级修正**
+- [x] **Step 5: 提交优先级修正**
 
 ```bash
 git add src/lib/pet-action.ts src/lib/pet-action.test.ts src/components/MonkeySprite.tsx

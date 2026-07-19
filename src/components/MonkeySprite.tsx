@@ -63,7 +63,6 @@ export const actionLabels: Record<PetAction, string> = {
   'quota-low': 'MonkeyCode 猴子提示今日额度偏低',
 }
 
-// Kept until PetShell switches to PetAction in Task 7.
 export const stateLabels = {
   IDLE: actionLabels.normal,
   WORKING: 'MonkeyCode 猴子正在处理任务',
