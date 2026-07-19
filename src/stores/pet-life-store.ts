@@ -49,7 +49,7 @@ let handledTaskResultKeys = new Set<string>()
 let hydratePromise: Promise<void> | null = null
 let saveQueue: Promise<void> = Promise.resolve()
 let storeGeneration = 0
-let persistenceEnabled = true
+let writeAllowed = true
 
 function normalizeOperationTime(now: number): number {
   const fallback = Date.now()
@@ -92,8 +92,13 @@ export const usePetLifeStore = create<PetLifeStoreState>((set, get) => {
     set({ persistenceError: PERSISTENCE_ERROR })
   }
 
+  function clearPersistenceError(generation: number): void {
+    if (generation !== storeGeneration || get().persistenceError === null) return
+    set({ persistenceError: null })
+  }
+
   function persist(snapshot: PetLifeSnapshot): Promise<void> {
-    if (!persistenceEnabled) return Promise.resolve()
+    if (!writeAllowed) return Promise.resolve()
 
     const savedSnapshot = { ...snapshot }
     const generation = storeGeneration
@@ -107,9 +112,10 @@ export const usePetLifeStore = create<PetLifeStoreState>((set, get) => {
     }
 
     const save = saveQueue.then(() => savePetLife(savedSnapshot))
-    saveQueue = save.catch(() => {
-      recordPersistenceError(generation)
-    })
+    saveQueue = save.then(
+      () => clearPersistenceError(generation),
+      () => recordPersistenceError(generation),
+    )
     return saveQueue
   }
 
@@ -198,11 +204,9 @@ export const usePetLifeStore = create<PetLifeStoreState>((set, get) => {
           loadedSnapshot = await electronAPI().loadPetLife()
         } catch {
           if (generation !== storeGeneration) return
-          persistenceEnabled = false
-          pendingOperations = []
+          loadedSnapshot = null
+          writeAllowed = false
           recordPersistenceError(generation)
-          set({ hydrated: true })
-          return
         }
 
         if (generation !== storeGeneration) return
@@ -277,7 +281,7 @@ export const usePetLifeStore = create<PetLifeStoreState>((set, get) => {
       pendingOperations = []
       handledTaskResultKeys = new Set<string>()
       hydratePromise = null
-      persistenceEnabled = true
+      writeAllowed = true
       const nextSnapshot = createInitialSnapshot()
       set({
         snapshot: nextSnapshot,

@@ -14,7 +14,7 @@ export interface GesturePoint extends Point {
 export interface GestureSession {
   points: GesturePoint[]
   previousClickAt: number | null
-  lockedIntent: 'drag' | 'pet-candidate' | 'pet' | null
+  lockedIntent: 'drag' | 'pet-candidate' | 'pet-cancelled' | 'pet' | null
   origin?: GesturePoint
   petDistance?: number
   petTravelX?: number
@@ -24,6 +24,11 @@ export interface GestureSession {
   petDirectionX?: number
   petDirectionY?: number
   petLastPoint?: GesturePoint
+}
+
+export function cancelPetCandidate(session: GestureSession): GestureSession {
+  if (session.lockedIntent !== 'pet-candidate') return session
+  return { ...session, lockedIntent: 'pet-cancelled' }
 }
 
 const DRAG_THRESHOLD = 5
@@ -51,12 +56,14 @@ export function appendGesturePoint(
   session: GestureSession,
   point: GesturePoint,
 ): GestureSession {
+  if (session.lockedIntent === 'pet-cancelled') return session
   const lastPoint = session.points[session.points.length - 1]
   if (!isValidPoint(point) || (lastPoint && point.at < lastPoint.at)) return session
 
   const points = [...session.points, point].slice(-MAX_POINTS)
   const origin = session.origin ?? session.points.find(isValidPoint) ?? point
-  if (session.lockedIntent === 'drag' || session.lockedIntent === 'pet') {
+  if (session.lockedIntent === 'drag'
+    || session.lockedIntent === 'pet') {
     return { ...session, origin, points }
   }
 
@@ -139,6 +146,7 @@ function validTimeOrderedPoints(points: GesturePoint[]): GesturePoint[] {
 export function classifyReleaseIntent(session: GestureSession): PointerIntent | null {
   if (session.lockedIntent === 'drag') return 'drag'
   if (session.lockedIntent === 'pet') return 'pet'
+  if (session.lockedIntent === 'pet-cancelled') return null
 
   const points = validTimeOrderedPoints(session.points)
   if (session.lockedIntent === 'pet-candidate') {

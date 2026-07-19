@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   appendGesturePoint,
+  cancelPetCandidate,
   classifyGesture,
   classifyReleaseIntent,
   type GesturePoint,
@@ -290,5 +291,53 @@ describe('pointer gesture sessions', () => {
     session = appendGesturePoint(session, { x: 3, y: 4, at: 351 })
 
     expect(session.lockedIntent).toBe('pet-candidate')
+  })
+
+  it('recognizes 80 pixels and two reversals while the candidate stays active', () => {
+    const session = makePetCandidate([
+      { x: 0, y: 0, at: 0 },
+      { x: 20, y: 0, at: 400 },
+      { x: 0, y: 0, at: 450 },
+      { x: 20, y: 0, at: 500 },
+      { x: 0, y: 0, at: 550 },
+    ])
+
+    expect(session.lockedIntent).toBe('pet')
+    expect(classifyReleaseIntent(session)).toBe('pet')
+  })
+
+  it('cancels a pet candidate permanently before an outside point is appended', () => {
+    let session = makePetCandidate([{ x: 0, y: 0, at: 0 }])
+    session = cancelPetCandidate(session)
+
+    expect(session.lockedIntent).toBe('pet-cancelled')
+    expect(classifyReleaseIntent(session)).toBeNull()
+
+    const pointCountAtCancellation = session.points.length
+    session = appendGesturePoint(session, { x: 20, y: 0, at: 400 })
+    session = appendGesturePoint(session, { x: 0, y: 0, at: 450 })
+    session = appendGesturePoint(session, { x: 20, y: 0, at: 500 })
+    session = appendGesturePoint(session, { x: 0, y: 0, at: 550 })
+
+    expect(session.lockedIntent).toBe('pet-cancelled')
+    expect(session.points).toHaveLength(pointCountAtCancellation)
+    expect(classifyReleaseIntent(session)).toBeNull()
+  })
+
+  it('keeps a locked pet when candidate cancellation is requested', () => {
+    const pet = makePetCandidate([
+      { x: 0, y: 0, at: 0 },
+      { x: 20, y: 0, at: 400 },
+      { x: 0, y: 0, at: 450 },
+      { x: 20, y: 0, at: 500 },
+      { x: 0, y: 0, at: 550 },
+    ])
+    const afterOutsideMove = appendGesturePoint(
+      cancelPetCandidate(pet),
+      { x: 500, y: 500, at: 600 },
+    )
+
+    expect(afterOutsideMove.lockedIntent).toBe('pet')
+    expect(classifyReleaseIntent(afterOutsideMove)).toBe('pet')
   })
 })

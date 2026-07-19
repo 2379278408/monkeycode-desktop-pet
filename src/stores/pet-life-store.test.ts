@@ -394,7 +394,7 @@ describe('usePetLifeStore', () => {
     expect(usePetLifeStore.getState().snapshot.satiety).toBeCloseTo(75)
   })
 
-  it('preserves pending memory and disables persistence for the generation when loading fails', async () => {
+  it('preserves pending operations but blocks writes when loading fails', async () => {
     let rejectLoad: ((error: Error) => void) | undefined
     const loadPetLife = vi.fn(() => new Promise<PetLifeSnapshot | null>((_resolve, reject) => {
       rejectLoad = reject
@@ -422,20 +422,98 @@ describe('usePetLifeStore', () => {
     expect(savePetLife).not.toHaveBeenCalled()
   })
 
-  it('restores persistence after reset following a load failure', async () => {
-    const loadPetLife = vi.fn()
-      .mockRejectedValueOnce(new Error('load failed'))
-      .mockResolvedValueOnce(null)
-    const savePetLife = vi.fn().mockResolvedValue(undefined)
+  it('retries persistence after the recovery save fails', async () => {
+    const loadPetLife = vi.fn().mockResolvedValue(null)
+    const savePetLife = vi.fn()
+      .mockRejectedValueOnce(new Error('disk full'))
+      .mockResolvedValueOnce(undefined)
     vi.stubGlobal('window', { electronAPI: { loadPetLife, savePetLife } })
+
     await usePetLifeStore.getState().hydrate(NOW)
 
-    usePetLifeStore.getState().reset()
-    await usePetLifeStore.getState().hydrate(NOW)
-
-    expect(loadPetLife).toHaveBeenCalledTimes(2)
+    expect(usePetLifeStore.getState()).toMatchObject({
+      hydrated: true,
+      persistenceError: '生命状态暂时无法保存，请稍后重试',
+    })
     expect(savePetLife).toHaveBeenCalledOnce()
+
+    usePetLifeStore.getState().interact({ type: 'click' }, NOW + 1)
+    await waitForSaves(savePetLife, 2)
+
+    expect(savePetLife).toHaveBeenCalledTimes(2)
+    expect(savePetLife.mock.calls[1][0]).toEqual(usePetLifeStore.getState().snapshot)
     expect(usePetLifeStore.getState().persistenceError).toBeNull()
+  })
+
+  it('keeps the final error after failure, success, then failure', async () => {
+    const api = installElectronAPI(snapshot())
+    await usePetLifeStore.getState().hydrate(NOW)
+    api.savePetLife.mockReset()
+      .mockRejectedValueOnce(new Error('first failure'))
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('final failure'))
+    const errorTransitions: Array<string | null> = []
+    let previousError = usePetLifeStore.getState().persistenceError
+    const unsubscribe = usePetLifeStore.subscribe((state) => {
+      if (state.persistenceError === previousError) return
+      previousError = state.persistenceError
+      errorTransitions.push(state.persistenceError)
+    })
+
+    try {
+      usePetLifeStore.getState().feed(NOW)
+      usePetLifeStore.getState().sleep(NOW + 1)
+      usePetLifeStore.getState().wake(NOW + 2)
+      await waitForSaves(api.savePetLife, 3)
+      await vi.waitFor(() => expect(errorTransitions).toEqual([
+        '生命状态暂时无法保存，请稍后重试',
+        null,
+        '生命状态暂时无法保存，请稍后重试',
+      ]))
+
+      expect(usePetLifeStore.getState().persistenceError)
+        .toBe('生命状态暂时无法保存，请稍后重试')
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  it('ignores an old generation save failure after reset', async () => {
+    const api = installElectronAPI(snapshot())
+    await usePetLifeStore.getState().hydrate(NOW)
+    let rejectOldSave: ((error: Error) => void) | undefined
+    api.savePetLife.mockReset()
+      .mockImplementationOnce(() => new Promise<void>((_resolve, reject) => {
+        rejectOldSave = reject
+      }))
+      .mockResolvedValueOnce(undefined)
+
+    usePetLifeStore.getState().feed(NOW)
+    await vi.waitFor(() => expect(api.savePetLife).toHaveBeenCalledOnce())
+    usePetLifeStore.getState().reset()
+    const errorTransitions: Array<string | null> = []
+    let previousError = usePetLifeStore.getState().persistenceError
+    const unsubscribe = usePetLifeStore.subscribe((state) => {
+      if (state.persistenceError === previousError) return
+      previousError = state.persistenceError
+      errorTransitions.push(state.persistenceError)
+    })
+
+    try {
+      const hydration = usePetLifeStore.getState().hydrate(NOW + HOUR_MS)
+      rejectOldSave?.(new Error('old generation failure'))
+      await hydration
+
+      expect(api.loadPetLife).toHaveBeenCalledTimes(2)
+      expect(api.savePetLife).toHaveBeenCalledTimes(2)
+      expect(errorTransitions).toEqual([])
+      expect(usePetLifeStore.getState()).toMatchObject({
+        hydrated: true,
+        persistenceError: null,
+      })
+    } finally {
+      unsubscribe()
+    }
   })
 
   it('records task results once per stable event key', async () => {

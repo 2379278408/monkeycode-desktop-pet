@@ -57,15 +57,9 @@ export function normalizePetLifeSnapshot(value: unknown): PetLifeSnapshot | null
   }
 }
 
-function safeReadError(error: unknown): string {
-  if (error instanceof SyntaxError) return 'SyntaxError: JSON 解析失败'
-  if (error instanceof Error) return `${error.name}: 文件读取失败`
-  return 'UnknownError: 文件读取失败'
-}
-
-function throwLoadError(diagnostic: string): never {
+function warnInvalidData(diagnostic: string): null {
   console.warn('[PetLife] 无法读取生命状态', diagnostic)
-  throw new PetLifeLoadError()
+  return null
 }
 
 export class PetLifeStore {
@@ -74,19 +68,21 @@ export class PetLifeStore {
   load(): PetLifeSnapshot | null {
     try {
       if (fs.statSync(this.filePath).size > MAX_PET_LIFE_SNAPSHOT_BYTES) {
-        throwLoadError('FileTooLargeError: 文件过大')
+        return warnInvalidData('FileTooLargeError: 文件过大')
       }
       const normalized = normalizePetLifeSnapshot(
         JSON.parse(fs.readFileSync(this.filePath, 'utf8')),
       )
-      if (!normalized) throwLoadError('InvalidSnapshotError: 数据格式无效')
+      if (!normalized) return warnInvalidData('InvalidSnapshotError: 数据格式无效')
       return normalized
     } catch (error) {
-      if (error instanceof PetLifeLoadError) throw error
       if (error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT') {
         return null
       }
-      console.warn('[PetLife] 无法读取生命状态', safeReadError(error))
+      if (error instanceof SyntaxError) {
+        return warnInvalidData('SyntaxError: JSON 解析失败')
+      }
+      console.warn('[PetLife] 无法读取生命状态', 'Error: 文件读取失败')
       throw new PetLifeLoadError()
     }
   }

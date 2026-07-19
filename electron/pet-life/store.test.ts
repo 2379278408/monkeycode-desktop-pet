@@ -154,26 +154,29 @@ describe('PetLifeStore', () => {
     expect(JSON.stringify(warning.mock.calls)).not.toContain(filePath)
   })
 
-  it('throws a fixed error for damaged JSON without logging its path or contents', () => {
+  it('returns null for damaged JSON with a redacted warning', () => {
     const { filePath, store } = createStore()
     const sensitiveContents = '{"secret":"do-not-log"'
     fs.writeFileSync(filePath, sensitiveContents, 'utf8')
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
-    expect(() => store.load()).toThrowError('桌宠生命状态读取失败')
-    expect(warning).toHaveBeenCalledOnce()
+    expect(store.load()).toBeNull()
+    expect(warning).toHaveBeenCalledWith(
+      '[PetLife] 无法读取生命状态',
+      'SyntaxError: JSON 解析失败',
+    )
     expect(JSON.stringify(warning.mock.calls)).not.toContain(sensitiveContents)
     expect(JSON.stringify(warning.mock.calls)).not.toContain(filePath)
     expect(warning.mock.calls[0]).toHaveLength(2)
   })
 
-  it('throws a fixed error for an oversized file without reading or leaking its contents', () => {
+  it('returns null for an oversized file without reading or leaking its contents', () => {
     const { filePath, store } = createStore()
     fs.writeFileSync(filePath, 's'.repeat(16 * 1024 + 1), 'utf8')
     const readFile = vi.spyOn(fs, 'readFileSync')
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
-    expect(() => store.load()).toThrowError('桌宠生命状态读取失败')
+    expect(store.load()).toBeNull()
     expect(readFile).not.toHaveBeenCalled()
     expect(warning).toHaveBeenCalledWith(
       '[PetLife] 无法读取生命状态',
@@ -201,12 +204,12 @@ describe('PetLifeStore', () => {
     )
   })
 
-  it('throws a fixed error when parsed data cannot be normalized', () => {
+  it('returns null when parsed data cannot be normalized', () => {
     const { filePath, store } = createStore()
     fs.writeFileSync(filePath, JSON.stringify({ ...validSnapshot, energy: 'secret-invalid' }), 'utf8')
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
 
-    expect(() => store.load()).toThrowError('桌宠生命状态读取失败')
+    expect(store.load()).toBeNull()
     expect(warning).toHaveBeenCalledWith(
       '[PetLife] 无法读取生命状态',
       'InvalidSnapshotError: 数据格式无效',

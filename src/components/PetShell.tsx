@@ -11,7 +11,9 @@ import { usePetStore, type TaskTerminalEvent } from '../stores/pet-store'
 import { usePetLifeStore } from '../stores/pet-life-store'
 import {
   appendGesturePoint,
+  cancelPetCandidate,
   classifyReleaseIntent,
+  type GesturePoint,
   type GestureSession,
   type PointerIntent,
 } from '../lib/pointer-gesture'
@@ -223,6 +225,7 @@ interface PetShellProps {
 interface PointerSession {
   pointerId: number
   gesture: GestureSession
+  latestClientPosition: ScreenPoint
   dragging: boolean
   petStartedAt: number | null
   closing: boolean
@@ -234,6 +237,54 @@ interface PointerSession {
 interface ScreenPoint {
   x: number
   y: number
+}
+
+interface RectBounds {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
+export function isPointInsideRect(point: ScreenPoint, rect: RectBounds): boolean {
+  if (![point.x, point.y, rect.left, rect.right, rect.top, rect.bottom].every(Number.isFinite)) {
+    return false
+  }
+  return rect.left <= rect.right
+    && rect.top <= rect.bottom
+    && point.x >= rect.left
+    && point.x <= rect.right
+    && point.y >= rect.top
+    && point.y <= rect.bottom
+}
+
+export function appendBoundedGesturePoint(
+  session: GestureSession,
+  screenPoint: GesturePoint,
+  clientPoint: ScreenPoint,
+  rect: RectBounds | null,
+): GestureSession {
+  const previousIntent = session.lockedIntent
+  const isInside = rect !== null && isPointInsideRect(clientPoint, rect)
+  if (previousIntent === 'pet-candidate' && !isInside) {
+    return cancelPetCandidate(session)
+  }
+
+  const appended = appendGesturePoint(session, screenPoint)
+  if (previousIntent !== 'pet-candidate'
+    && appended.lockedIntent === 'pet-candidate'
+    && !isInside) {
+    return cancelPetCandidate(appended)
+  }
+  return appended
+}
+
+function getCaptureRect(target: HTMLDivElement): RectBounds | null {
+  try {
+    return target.getBoundingClientRect()
+  } catch {
+    return null
+  }
 }
 
 interface PassthroughController {
@@ -490,6 +541,7 @@ export function PetShell({ onLogout }: PetShellProps) {
         previousClickAt: previousClickAtRef.current,
         lockedIntent: null,
       },
+      latestClientPosition: { x: event.clientX, y: event.clientY },
       dragging: false,
       petStartedAt: null,
       closing: false,
@@ -511,11 +563,16 @@ export function PetShell({ onLogout }: PetShellProps) {
       if (!mountedRef.current || pointerSessionRef.current !== session || session.closing) return
       session.holdTimer = null
       const latestPoint = session.gesture.points[session.gesture.points.length - 1]
-      session.gesture = appendGesturePoint(session.gesture, {
-        x: latestPoint.x,
-        y: latestPoint.y,
-        at: Math.max(latestPoint.at, startedAt + 350),
-      })
+      session.gesture = appendBoundedGesturePoint(
+        session.gesture,
+        {
+          x: latestPoint.x,
+          y: latestPoint.y,
+          at: Math.max(latestPoint.at, startedAt + 350),
+        },
+        session.latestClientPosition,
+        getCaptureRect(session.captureTarget),
+      )
       if (session.gesture.lockedIntent === 'pet-candidate') {
         session.petStartedAt = startedAt + 350
       }
@@ -527,13 +584,15 @@ export function PetShell({ onLogout }: PetShellProps) {
     const session = pointerSessionRef.current
     if (!session || session.pointerId !== event.pointerId) return
     latestPointerScreenPositionRef.current = { x: event.screenX, y: event.screenY }
+    session.latestClientPosition = { x: event.clientX, y: event.clientY }
 
     const previousIntent = session.gesture.lockedIntent
-    session.gesture = appendGesturePoint(session.gesture, {
-      x: event.screenX,
-      y: event.screenY,
-      at: event.timeStamp,
-    })
+    session.gesture = appendBoundedGesturePoint(
+      session.gesture,
+      { x: event.screenX, y: event.screenY, at: event.timeStamp },
+      session.latestClientPosition,
+      getCaptureRect(session.captureTarget),
+    )
     if (session.petStartedAt === null
       && previousIntent !== 'pet-candidate'
       && session.gesture.lockedIntent === 'pet-candidate') {
@@ -672,12 +731,14 @@ export function PetShell({ onLogout }: PetShellProps) {
     const session = pointerSessionRef.current
     if (!session || session.pointerId !== event.pointerId) return
     latestPointerScreenPositionRef.current = { x: event.screenX, y: event.screenY }
+    session.latestClientPosition = { x: event.clientX, y: event.clientY }
 
-    session.gesture = appendGesturePoint(session.gesture, {
-      x: event.screenX,
-      y: event.screenY,
-      at: event.timeStamp,
-    })
+    session.gesture = appendBoundedGesturePoint(
+      session.gesture,
+      { x: event.screenX, y: event.screenY, at: event.timeStamp },
+      session.latestClientPosition,
+      getCaptureRect(session.captureTarget),
+    )
     const intent = classifyReleaseIntent(session.gesture)
     const releasedAt = event.timeStamp
     const sleepingAtRelease = usePetLifeStore.getState().snapshot.sleeping

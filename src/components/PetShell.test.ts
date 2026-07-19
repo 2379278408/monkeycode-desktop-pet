@@ -2,12 +2,15 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { PetState } from '../stores/pet-store'
+import { classifyReleaseIntent, type GestureSession } from '../lib/pointer-gesture'
 import {
   PET_LIFE_TICK_MS,
   PetShell,
+  appendBoundedGesturePoint,
   applyDesiredCardVisibility,
   createPendingClickCoordinator,
   finishDragWithPendingClick,
+  isPointInsideRect,
   petActionDuration,
   pettingDurationSeconds,
   runLatestStoreDoubleClick,
@@ -152,6 +155,119 @@ describe('PetShell life integration helpers', () => {
   it('clamps petting time to non-negative seconds', () => {
     expect(pettingDurationSeconds(1_350, 3_500)).toBe(2.15)
     expect(pettingDurationSeconds(3_500, 1_000)).toBe(0)
+  })
+})
+
+describe('pet gesture bounds', () => {
+  const rect = { left: 10, right: 30, top: 20, bottom: 40 }
+  const inside = { x: 20, y: 30 }
+  const makeGesture = (): GestureSession => ({
+    points: [{ x: 0, y: 0, at: 0 }],
+    previousClickAt: null,
+    lockedIntent: null,
+  })
+
+  it.each([
+    { x: 10, y: 20 },
+    { x: 30, y: 40 },
+    { x: 10, y: 40 },
+    { x: 30, y: 20 },
+  ])('includes the rectangle boundary at $x,$y', (point) => {
+    expect(isPointInsideRect(point, rect)).toBe(true)
+  })
+
+  it.each([
+    { rect: { left: Number.NaN, right: 30, top: 20, bottom: 40 } },
+    { rect: { left: 10, right: Number.POSITIVE_INFINITY, top: 20, bottom: 40 } },
+    { rect: { left: 30, right: 10, top: 20, bottom: 40 } },
+  ])('rejects an invalid rectangle', ({ rect: invalidRect }) => {
+    expect(isPointInsideRect({ x: 20, y: 30 }, invalidRect)).toBe(false)
+  })
+
+  it('cancels before an outside release can complete pet distance', () => {
+    let gesture = appendBoundedGesturePoint(
+      makeGesture(), { x: 0, y: 0, at: 350 }, inside, rect,
+    )
+    gesture = appendBoundedGesturePoint(gesture, { x: 20, y: 0, at: 400 }, inside, rect)
+    gesture = appendBoundedGesturePoint(gesture, { x: 0, y: 0, at: 450 }, inside, rect)
+    gesture = appendBoundedGesturePoint(gesture, { x: 20, y: 0, at: 500 }, inside, rect)
+    const pointCountBeforeRelease = gesture.points.length
+
+    gesture = appendBoundedGesturePoint(
+      gesture, { x: 40, y: 0, at: 550 }, { x: 31, y: 30 }, rect,
+    )
+
+    expect(gesture.lockedIntent).toBe('pet-cancelled')
+    expect(gesture.points).toHaveLength(pointCountBeforeRelease)
+    expect(classifyReleaseIntent(gesture)).toBeNull()
+  })
+
+  it('cancels a timer-created candidate after sub-threshold movement leaves the bounds', () => {
+    let gesture = appendBoundedGesturePoint(
+      makeGesture(), { x: 4, y: 0, at: 300 }, { x: 31, y: 30 }, rect,
+    )
+    expect(gesture.lockedIntent).toBeNull()
+
+    gesture = appendBoundedGesturePoint(
+      gesture, { x: 4, y: 0, at: 350 }, { x: 31, y: 30 }, rect,
+    )
+
+    expect(gesture.lockedIntent).toBe('pet-cancelled')
+    expect(classifyReleaseIntent(gesture)).toBeNull()
+  })
+
+  it.each([
+    null,
+    { left: Number.NaN, right: 30, top: 20, bottom: 40 },
+  ])('cancels a candidate with unavailable or invalid bounds', (bounds) => {
+    const candidate = appendBoundedGesturePoint(
+      makeGesture(), { x: 0, y: 0, at: 350 }, inside, rect,
+    )
+    const gesture = appendBoundedGesturePoint(
+      candidate, { x: 20, y: 0, at: 400 }, inside, bounds,
+    )
+
+    expect(gesture.lockedIntent).toBe('pet-cancelled')
+    expect(classifyReleaseIntent(gesture)).toBeNull()
+  })
+
+  it.each([
+    { point: { x: 1, y: 1, at: 100 }, expected: 'click' },
+    { point: { x: 3, y: 4, at: 100 }, expected: 'drag' },
+  ] as const)('preserves $expected when bounds are unavailable', ({ point, expected }) => {
+    const gesture = appendBoundedGesturePoint(makeGesture(), point, inside, null)
+
+    expect(classifyReleaseIntent(gesture)).toBe(expected)
+  })
+
+  it('recognizes an in-bounds pet path', () => {
+    let gesture = appendBoundedGesturePoint(
+      makeGesture(), { x: 0, y: 0, at: 350 }, inside, rect,
+    )
+    gesture = appendBoundedGesturePoint(gesture, { x: 30, y: 0, at: 400 }, inside, rect)
+    gesture = appendBoundedGesturePoint(gesture, { x: 0, y: 0, at: 450 }, inside, rect)
+    gesture = appendBoundedGesturePoint(gesture, { x: 20, y: 0, at: 500 }, inside, rect)
+
+    expect(gesture.lockedIntent).toBe('pet')
+    expect(classifyReleaseIntent(gesture)).toBe('pet')
+  })
+
+  it('keeps a locked pet stable outside invalid or unavailable bounds', () => {
+    let gesture = appendBoundedGesturePoint(
+      makeGesture(), { x: 0, y: 0, at: 350 }, inside, rect,
+    )
+    gesture = appendBoundedGesturePoint(gesture, { x: 30, y: 0, at: 400 }, inside, rect)
+    gesture = appendBoundedGesturePoint(gesture, { x: 0, y: 0, at: 450 }, inside, rect)
+    gesture = appendBoundedGesturePoint(gesture, { x: 20, y: 0, at: 500 }, inside, rect)
+    const pointCountBeforeLeaving = gesture.points.length
+
+    gesture = appendBoundedGesturePoint(
+      gesture, { x: 500, y: 500, at: 550 }, { x: 500, y: 500 }, null,
+    )
+
+    expect(gesture.lockedIntent).toBe('pet')
+    expect(gesture.points).toHaveLength(pointCountBeforeLeaving + 1)
+    expect(classifyReleaseIntent(gesture)).toBe('pet')
   })
 })
 
