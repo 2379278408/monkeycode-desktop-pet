@@ -31,7 +31,7 @@
 - Consumes: `PetAction` from `src/lib/pet-action.ts`; `actionAnimations` from `src/components/MonkeySprite.tsx`.
 - Produces: `galleryActionGroups`, `galleryAssets`, `galleryAssetUrl(filename)`, `galleryAssetReferences(filename)`, `GalleryActionGroup`, and `GalleryAsset`.
 
-- [ ] **Step 1: Write the failing catalog tests**
+- [x] **Step 1: Write the failing catalog tests**
 
 Create `src/lib/pet-action-gallery.test.ts`:
 
@@ -57,7 +57,7 @@ describe('pet action gallery catalog', () => {
 
   it('inventories all 15 packaged SVG assets', () => {
     expect(galleryAssets).toHaveLength(15)
-    expect(new Set(galleryAssets.map((asset) => asset.filename))).toHaveLength(15)
+    expect(new Set(galleryAssets.map((asset) => asset.filename)).size).toBe(15)
 
     for (const asset of galleryAssets) {
       expect(() => readFileSync(
@@ -83,13 +83,13 @@ describe('pet action gallery catalog', () => {
 })
 ```
 
-- [ ] **Step 2: Run the test and verify the missing module failure**
+- [x] **Step 2: Run the test and verify the missing module failure**
 
 Run: `npm test -- src/lib/pet-action-gallery.test.ts`
 
 Expected: FAIL because `./pet-action-gallery` does not exist.
 
-- [ ] **Step 3: Implement the typed catalog**
+- [x] **Step 3: Implement the typed catalog**
 
 Create `src/lib/pet-action-gallery.ts`:
 
@@ -165,13 +165,13 @@ export function galleryAssetReferences(filename: string): PetAction[] {
 }
 ```
 
-- [ ] **Step 4: Run the catalog tests**
+- [x] **Step 4: Run the catalog tests**
 
 Run: `npm test -- src/lib/pet-action-gallery.test.ts`
 
 Expected: PASS, 4 tests.
 
-- [ ] **Step 5: Commit the catalog**
+- [x] **Step 5: Commit the catalog**
 
 ```bash
 git add src/lib/pet-action-gallery.ts src/lib/pet-action-gallery.test.ts
@@ -191,7 +191,7 @@ git commit -m "feat: 增加桌宠动作展厅目录"
 - Consumes: `galleryActionGroups`, `galleryAssets`, `galleryAssetReferences`, and `galleryAssetUrl` from Task 1; `MonkeySprite`, `actionAnimations`, and `actionLabels` from production code.
 - Produces: `PetActionGallery(): JSX.Element`.
 
-- [ ] **Step 1: Write failing SSR component tests**
+- [x] **Step 1: Write failing SSR component tests**
 
 Create `src/components/PetActionGallery.test.ts`:
 
@@ -251,13 +251,13 @@ describe('PetActionGallery', () => {
 })
 ```
 
-- [ ] **Step 2: Run the component test and verify it fails**
+- [x] **Step 2: Run the component test and verify it fails**
 
 Run: `npm test -- src/components/PetActionGallery.test.ts`
 
 Expected: FAIL because `PetActionGallery.tsx` does not exist.
 
-- [ ] **Step 3: Implement the gallery component**
+- [x] **Step 3: Implement the gallery component**
 
 Create `src/components/PetActionGallery.tsx` with these exact behaviors:
 
@@ -389,7 +389,7 @@ export function PetActionGallery() {
 }
 ```
 
-- [ ] **Step 4: Add namespaced responsive gallery styles**
+- [x] **Step 4: Add namespaced responsive gallery styles**
 
 Append a `.gallery-shell` style block to `src/styles.css` that implements:
 
@@ -515,13 +515,13 @@ Append a `.gallery-shell` style block to `src/styles.css` that implements:
 }
 ```
 
-- [ ] **Step 5: Run component and catalog tests**
+- [x] **Step 5: Run component and catalog tests**
 
 Run: `npm test -- src/components/PetActionGallery.test.ts src/lib/pet-action-gallery.test.ts`
 
 Expected: PASS, 9 tests.
 
-- [ ] **Step 6: Commit the gallery UI**
+- [x] **Step 6: Commit the gallery UI**
 
 ```bash
 git add src/components/PetActionGallery.tsx src/components/PetActionGallery.test.ts src/styles.css
@@ -541,7 +541,7 @@ git commit -m "feat: 展示桌宠全部状态动作"
 - Consumes: `App` and `PetActionGallery`.
 - Produces: `isGalleryMode(search: string): boolean` and `RootView({ search }): JSX.Element`.
 
-- [ ] **Step 1: Write failing root selection tests**
+- [x] **Step 1: Write failing root selection tests**
 
 Create `src/RootView.test.ts`:
 
@@ -576,13 +576,13 @@ describe('RootView', () => {
 })
 ```
 
-- [ ] **Step 2: Run the root test and verify it fails**
+- [x] **Step 2: Run the root test and verify it fails**
 
 Run: `npm test -- src/RootView.test.ts`
 
 Expected: FAIL because `RootView.tsx` does not exist.
 
-- [ ] **Step 3: Implement root selection**
+- [x] **Step 3: Implement root selection**
 
 Create `src/RootView.tsx`:
 
@@ -611,13 +611,13 @@ createRoot(document.getElementById('root')!).render(
 )
 ```
 
-- [ ] **Step 4: Run root and gallery tests**
+- [x] **Step 4: Run root and gallery tests**
 
 Run: `npm test -- src/RootView.test.ts src/components/PetActionGallery.test.ts src/lib/pet-action-gallery.test.ts`
 
 Expected: PASS, 12 tests.
 
-- [ ] **Step 5: Commit the browser entry**
+- [x] **Step 5: Commit the browser entry**
 
 ```bash
 git add src/RootView.tsx src/RootView.test.ts src/main.tsx
@@ -635,21 +635,21 @@ git commit -m "feat: 增加桌宠动作展厅入口"
 - Consumes: all deliverables from Tasks 1-3.
 - Produces: a verified `/?gallery=1` preview URL on the Vite development server.
 
-- [ ] **Step 1: Run the full release gate**
+- [x] **Step 1: Run the full release gate**
 
 Run: `npm run verify`
 
 Expected: typecheck passes; all Vitest files pass; Electron bundle verification passes; Vite production build passes.
 
-- [ ] **Step 2: Check patch formatting and repository state**
+- [x] **Step 2: Check patch formatting and repository state**
 
 Run: `git diff --check && git status --short`
 
 Expected: no whitespace errors; only intentional plan status updates remain.
 
-- [ ] **Step 3: Start the bounded gallery preview**
+- [x] **Step 3: Start the bounded gallery preview**
 
-Use the `deploy-website` skill to start `npm run dev -- --host 0.0.0.0 --port 4175` in a managed background terminal. Request the platform preview for port `4175` and verify:
+Use the `deploy-website` skill to reuse the repository's managed Vite terminal on port `4174`. Request the platform preview for port `4174` and verify:
 
 ```text
 /?gallery=1
@@ -657,13 +657,13 @@ Use the `deploy-website` skill to start `npm run dev -- --host 0.0.0.0 --port 41
 
 Expected: all four action sections and the 15-asset inventory render without Electron API errors.
 
-- [ ] **Step 4: Check desktop and mobile layouts**
+- [x] **Step 4: Check desktop and mobile layouts**
 
 Inspect the preview at a desktop viewport and a viewport at or below 680px.
 
 Expected: desktop cards use an adaptive multi-column grid; mobile action cards use two columns; labels remain readable; no horizontal overflow occurs.
 
-- [ ] **Step 5: Record final plan completion**
+- [x] **Step 5: Record final plan completion**
 
 Mark all completed checkboxes in this plan, then commit the status update:
 
