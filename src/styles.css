@@ -343,3 +343,208 @@ body {
     transform: scale(.85) !important;
   }
 }
+
+.gallery-shell {
+  --gallery-accent: #70e1f5;
+  --gallery-warm: #ffb547;
+  --gallery-text: #f4f7fb;
+  --gallery-muted: #aab6c2;
+  --gallery-surface: rgba(255, 255, 255, .06);
+  box-sizing: border-box;
+  height: 100vh;
+  min-height: 100vh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 48px clamp(20px, 5vw, 72px) 80px;
+  color: var(--gallery-text);
+  font: 16px/1.5 Inter, "Segoe UI", sans-serif;
+  background:
+    radial-gradient(circle at 12% 4%, rgba(112, 225, 245, .16), transparent 28rem),
+    radial-gradient(circle at 88% 18%, rgba(255, 181, 71, .12), transparent 24rem),
+    #091017;
+}
+
+.gallery-hero,
+.gallery-group {
+  width: min(1280px, 100%);
+  margin-inline: auto;
+}
+
+.gallery-eyebrow,
+.gallery-card-copy code,
+.gallery-asset-card code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: .08em;
+}
+
+.gallery-eyebrow {
+  margin: 0;
+  color: var(--gallery-accent);
+  font-size: .75rem;
+  font-weight: 700;
+}
+
+.gallery-hero h1 {
+  max-width: 760px;
+  margin: 10px 0 14px;
+  font-size: clamp(2.25rem, 6vw, 5.6rem);
+  line-height: .94;
+  letter-spacing: -.055em;
+}
+
+.gallery-intro {
+  max-width: 620px;
+  margin: 0;
+  color: var(--gallery-muted);
+  font-size: 1.05rem;
+}
+
+.gallery-stats,
+.gallery-action-grid,
+.gallery-asset-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.gallery-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 30px;
+}
+
+.gallery-stats strong,
+.gallery-action-card,
+.gallery-asset-card {
+  border: 1px solid rgba(255, 255, 255, .11);
+  background: var(--gallery-surface);
+  box-shadow: inset 0 1px rgba(255, 255, 255, .06), 0 18px 50px rgba(0, 0, 0, .12);
+}
+
+.gallery-stats strong {
+  padding: 16px 18px;
+  border-radius: 14px;
+  font-size: .9rem;
+}
+
+.gallery-stats strong:first-child { color: var(--gallery-accent); }
+.gallery-stats strong:nth-child(2) { color: #ffd28a; }
+
+.gallery-group { margin-top: 58px; }
+.gallery-section-heading { margin-bottom: 18px; }
+
+.gallery-section-heading h2 {
+  margin: 0 0 6px;
+  font-size: 1.55rem;
+  letter-spacing: -.025em;
+}
+
+.gallery-section-heading p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--gallery-muted);
+}
+
+.gallery-action-grid {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.gallery-action-card {
+  overflow: hidden;
+  border-radius: 20px;
+}
+
+.gallery-stage {
+  display: grid;
+  min-height: 184px;
+  place-items: center;
+  background:
+    linear-gradient(145deg, rgba(112, 225, 245, .08), rgba(255, 181, 71, .04)),
+    repeating-linear-gradient(90deg, transparent 0 23px, rgba(255, 255, 255, .018) 24px);
+}
+
+.gallery-card-copy { padding: 16px; }
+
+.gallery-card-copy h3 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+}
+
+.gallery-card-copy code,
+.gallery-asset-card code {
+  overflow-wrap: anywhere;
+  color: var(--gallery-accent);
+  font-size: .72rem;
+}
+
+.gallery-card-copy p {
+  margin: 8px 0 0;
+  color: var(--gallery-muted);
+  font-size: .82rem;
+}
+
+.gallery-card-copy span {
+  display: inline-block;
+  margin-top: 10px;
+  color: #ffd28a;
+  font-size: .75rem;
+  font-weight: 700;
+}
+
+.gallery-asset-grid {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.gallery-asset-card {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  min-width: 0;
+  padding: 18px 12px;
+  border-radius: 16px;
+  text-align: center;
+}
+
+.gallery-asset-card img {
+  display: block;
+  width: 96px;
+  height: 96px;
+}
+
+.gallery-asset-card span {
+  color: var(--gallery-muted);
+  font-size: .78rem;
+}
+
+.gallery-asset-error {
+  display: grid;
+  width: 96px;
+  height: 96px;
+  place-items: center;
+  color: #ff9aa6;
+  font-size: .75rem;
+}
+
+@media (max-width: 680px) {
+  .gallery-shell { padding: 28px 14px 56px; }
+  .gallery-stats { grid-template-columns: 1fr; }
+  .gallery-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gallery-stage { min-height: 154px; }
+  .gallery-action-card .pet-sprite,
+  .gallery-action-card .pet-sprite img { width: 118px; height: 118px; }
+}
+
+@media (max-width: 390px) {
+  .gallery-action-grid { gap: 10px; }
+  .gallery-card-copy { padding: 12px; }
+  .gallery-action-card .pet-sprite,
+  .gallery-action-card .pet-sprite img { width: 108px; height: 108px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gallery-shell *,
+  .gallery-shell *::before,
+  .gallery-shell *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
