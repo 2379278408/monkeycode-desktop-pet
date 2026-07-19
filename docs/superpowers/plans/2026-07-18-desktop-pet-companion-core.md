@@ -789,7 +789,7 @@ git add package.json package-lock.json
 git commit -m "chore: 发布桌宠互动核心 1.2.0"
 ```
 
-- [ ] **Step 5: 推送并触发 Windows CI**
+- [x] **Step 5: 推送并触发 Windows CI**
 
 Run: `git push origin 260717-fix-auth-data-chain`
 
@@ -797,7 +797,7 @@ Run: `gh workflow run build-win.yml --ref 260717-fix-auth-data-chain`
 
 Expected: 新的 Windows workflow run 被创建。
 
-- [ ] **Step 6: 下载并校验安装包**
+- [x] **Step 6: 下载并校验安装包**
 
 Run: `RUN_ID=$(gh run list --workflow build-win.yml --branch 260717-fix-auth-data-chain --limit 1 --json databaseId --jq '.[0].databaseId')`
 
@@ -810,6 +810,14 @@ Run: `gh run download "$RUN_ID" -n monkeycode-desktop-pet-win-x64 -D "/tmp/deskt
 Run: `sha256sum "/tmp/desktop-pet-build/companion-core-1.2.0/MonkeyCode Desktop Pet Setup 1.2.0.exe"`
 
 Expected: CI 成功，安装包大小大于 0，SHA-256 写入本计划。
+
+验收包记录（2026-07-19）：
+
+- GitHub Actions Run：`29680837560`
+- Run URL：`https://github.com/2379278408/monkeycode-desktop-pet/actions/runs/29680837560`
+- 本地路径：`/tmp/desktop-pet-build/companion-core-1.2.0/MonkeyCode Desktop Pet Setup 1.2.0.exe`
+- 文件大小：`100098874` bytes
+- SHA-256：`f32e5ff29547898b0ba2a6f1602dbdef351105258618d2fbca226af2326437a4`
 
 - [ ] **Step 7: Windows 实机验收**
 

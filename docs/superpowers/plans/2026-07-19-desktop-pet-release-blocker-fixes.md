@@ -478,7 +478,7 @@ git add package.json package-lock.json .github/workflows/build-win.yml docs/supe
 git commit -m "chore: 发布桌宠互动核心 1.2.0"
 ```
 
-- [ ] **Step 6: 推送并触发 Windows CI**
+- [x] **Step 6: 推送并触发 Windows CI**
 
 Run: `git push origin 260717-fix-auth-data-chain`
 
@@ -486,7 +486,7 @@ Run: `gh workflow run build-win.yml --ref 260717-fix-auth-data-chain`
 
 Expected: 创建新的 `build-win.yml` workflow run。
 
-- [ ] **Step 7: 等待并下载安装包**
+- [x] **Step 7: 等待并下载安装包**
 
 Run:
 
@@ -501,6 +501,6 @@ Run: `sha256sum "/tmp/desktop-pet-build/companion-core-1.2.0/MonkeyCode Desktop 
 
 Expected: workflow 成功，安装包大小大于 0，SHA-256 记录到互动核心计划。
 
-- [ ] **Step 8: 停在 Windows 实机验收检查点**
+- [x] **Step 8: 停在 Windows 实机验收检查点**
 
 向用户报告 Run ID、安装包路径、大小、SHA-256 和验收清单。等待 Windows 100%、125%、150% 缩放及多显示器结果。
