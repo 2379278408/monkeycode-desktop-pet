@@ -1,9 +1,17 @@
+import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { RootView, isGalleryMode } from './RootView'
 
 describe('RootView', () => {
+  it('declares a responsive mobile viewport', () => {
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8')
+
+    expect(html).toContain('name="viewport"')
+    expect(html).toContain('content="width=device-width, initial-scale=1"')
+  })
+
   it('recognizes only the explicit gallery query value', () => {
     expect(isGalleryMode('?gallery=1')).toBe(true)
     expect(isGalleryMode('?source=test&gallery=1')).toBe(true)

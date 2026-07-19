@@ -19,6 +19,37 @@ const finiteActions = new Set<PetAction>([
   'task-error',
 ])
 
+interface ReplayMediaQuery {
+  matches: boolean
+  addEventListener: (type: 'change', listener: () => void) => void
+  removeEventListener: (type: 'change', listener: () => void) => void
+}
+
+export function startGalleryReplay(
+  media: ReplayMediaQuery,
+  replay: () => void,
+  schedule: (callback: () => void, delay: number) => number = window.setInterval,
+  cancel: (timer: number) => void = window.clearInterval,
+): () => void {
+  let timer: number | undefined
+
+  const sync = () => {
+    if (timer !== undefined) {
+      cancel(timer)
+      timer = undefined
+    }
+    if (!media.matches) timer = schedule(replay, 4_800)
+  }
+
+  media.addEventListener('change', sync)
+  sync()
+
+  return () => {
+    media.removeEventListener('change', sync)
+    if (timer !== undefined) cancel(timer)
+  }
+}
+
 function filenameFor(action: PetAction): string {
   return actionAnimations[action].split('/').pop() ?? ''
 }
@@ -78,7 +109,7 @@ function AssetCard({ asset }: { asset: GalleryAsset }) {
             />
           )}
       <code>{asset.filename}</code>
-      <span role={failed ? 'status' : undefined}>{status}</span>
+      <span role="status" aria-live="polite">{status}</span>
     </article>
   )
 }
@@ -87,8 +118,10 @@ export function PetActionGallery() {
   const [replay, setReplay] = useState(0)
 
   useEffect(() => {
-    const timer = window.setInterval(() => setReplay((value) => value + 1), 4_800)
-    return () => window.clearInterval(timer)
+    return startGalleryReplay(
+      window.matchMedia('(prefers-reduced-motion: reduce)'),
+      () => setReplay((value) => value + 1),
+    )
   }, [])
 
   return (

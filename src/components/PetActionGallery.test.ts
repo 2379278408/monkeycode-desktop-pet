@@ -1,9 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { actionAnimations, actionClasses } from './MonkeySprite'
-import { PetActionGallery, assetInventoryStatus } from './PetActionGallery'
+import {
+  PetActionGallery,
+  assetInventoryStatus,
+  startGalleryReplay,
+} from './PetActionGallery'
 
 describe('PetActionGallery', () => {
   it('renders the acceptance summary and all four groups', () => {
@@ -21,9 +25,11 @@ describe('PetActionGallery', () => {
     const markup = renderToStaticMarkup(createElement(PetActionGallery))
 
     for (const [action, asset] of Object.entries(actionAnimations)) {
-      expect(markup).toContain(`data-action="${action}"`)
-      expect(markup).toContain(actionClasses[action as keyof typeof actionClasses])
-      expect(markup).toContain(asset.split('/').pop())
+      const card = markup.match(new RegExp(`<article[^>]+data-action="${action}"[\\s\\S]+?</article>`))?.[0]
+
+      expect(card).toBeDefined()
+      expect(card).toContain(actionClasses[action as keyof typeof actionClasses])
+      expect(card).toContain(asset.split('/').pop())
     }
   })
 
@@ -40,6 +46,30 @@ describe('PetActionGallery', () => {
     expect(assetInventoryStatus(true, 0, false)).toBe('打包辅助资源')
     expect(assetInventoryStatus(false, 3, false)).toBe('3 个动作引用')
     expect(assetInventoryStatus(false, 3, true)).toBe('资源加载失败')
+  })
+
+  it('coordinates replay with reduced-motion changes and cleanup', () => {
+    let changeListener: (() => void) | undefined
+    const media = {
+      matches: true,
+      addEventListener: vi.fn((_event: string, listener: () => void) => { changeListener = listener }),
+      removeEventListener: vi.fn(),
+    }
+    const schedule = vi.fn(() => 42)
+    const cancel = vi.fn()
+    const replay = vi.fn()
+    const cleanup = startGalleryReplay(media, replay, schedule, cancel)
+
+    expect(schedule).not.toHaveBeenCalled()
+    media.matches = false
+    changeListener?.()
+    expect(schedule).toHaveBeenCalledWith(replay, 4_800)
+    media.matches = true
+    changeListener?.()
+    expect(cancel).toHaveBeenCalledWith(42)
+
+    cleanup()
+    expect(media.removeEventListener).toHaveBeenCalledWith('change', expect.any(Function))
   })
 
   it('defines responsive and reduced-motion gallery styles', () => {

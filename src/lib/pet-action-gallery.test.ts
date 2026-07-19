@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { actionAnimations } from '../components/MonkeySprite'
 import {
@@ -18,12 +18,18 @@ describe('pet action gallery catalog', () => {
   })
 
   it('inventories all 15 packaged SVG assets', () => {
+    const assetDirectory = new URL('../../public/assets/monkey/', import.meta.url)
+    const packagedAssets = readdirSync(assetDirectory)
+      .filter((filename) => filename.endsWith('.svg'))
+      .sort()
+
     expect(galleryAssets).toHaveLength(15)
     expect(new Set(galleryAssets.map((asset) => asset.filename)).size).toBe(15)
+    expect(galleryAssets.map((asset) => asset.filename).sort()).toEqual(packagedAssets)
 
     for (const asset of galleryAssets) {
       expect(() => readFileSync(
-        new URL(`../../public/assets/monkey/${asset.filename}`, import.meta.url),
+        new URL(asset.filename, assetDirectory),
         'utf8',
       )).not.toThrow()
     }
