@@ -21,6 +21,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --fetch-timeout=60000
+
       - name: Type check
         run: npm run typecheck
 
@@ -49,12 +52,23 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Verify installer name
+        shell: pwsh
+        run: |
+          $installer = "release/MonkeyCode Desktop Pet Setup 1.2.0.exe"
+          if (-not (Test-Path $installer)) {
+            throw "Missing expected installer: $installer"
+          }
+          if ((Get-Item $installer).Length -le 0) {
+            throw "Installer is empty: $installer"
+          }
+
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
         with:
           name: monkeycode-desktop-pet-win-x64
           path: |
-            release/*.exe
+            release/MonkeyCode Desktop Pet Setup 1.2.0.exe
             release/*.yml
           retention-days: 30
           if-no-files-found: error

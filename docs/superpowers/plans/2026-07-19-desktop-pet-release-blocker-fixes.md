@@ -432,7 +432,7 @@ git commit -m "fix: 协调桌宠连续手势时序"
 - Consumes: Task 1 至 Task 3 的修正提交。
 - Produces: 1.2.0 Windows x64 NSIS workflow 和可核验安装包。
 
-- [ ] **Step 1: 精确校验 Windows 安装包名称**
+- [x] **Step 1: 精确校验 Windows 安装包名称**
 
 在 `.github/workflows/build-win.yml` 的 Electron 构建后增加 PowerShell 检查：
 
@@ -457,21 +457,21 @@ git commit -m "fix: 协调桌宠连续手势时序"
             release/*.yml
 ```
 
-- [ ] **Step 2: 运行完整发布门禁**
+- [x] **Step 2: 运行完整发布门禁**
 
 Run: `npm run verify && npm audit --omit=dev --fetch-timeout=60000 && git diff --check`
 
 Expected: 全部测试、类型检查、Electron bundle、Vite 构建通过，生产依赖审计为 0 漏洞。
 
-- [ ] **Step 3: 请求完整范围复审**
+- [x] **Step 3: 请求完整范围复审**
 
 审查 `0a2da35..HEAD`，确认 Critical 和 Important 均为 0。重点复测连续手势、动作层级、IPC envelope、资源映射和 Windows workflow 精确产物。
 
-- [ ] **Step 4: 更新两个计划的完成状态**
+- [x] **Step 4: 更新两个计划的完成状态**
 
 将本计划 Task 1 至 Task 4 已完成步骤标记为 `[x]`；将互动核心计划 Task 8 的版本、审查、门禁和提交步骤标记为 `[x]`。Windows workflow 和实机验收步骤按实际结果更新。
 
-- [ ] **Step 5: 提交 1.2.0 发布配置**
+- [x] **Step 5: 提交 1.2.0 发布配置**
 
 ```bash
 git add package.json package-lock.json .github/workflows/build-win.yml docs/superpowers/plans/2026-07-18-desktop-pet-companion-core.md docs/superpowers/plans/2026-07-19-desktop-pet-release-blocker-fixes.md

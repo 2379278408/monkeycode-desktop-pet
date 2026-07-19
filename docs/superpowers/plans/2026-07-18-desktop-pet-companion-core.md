@@ -768,21 +768,21 @@ git commit -m "feat: 完成桌宠喂食睡眠与手势互动"
 - Consumes: Task 1 至 Task 7 的完整实现。
 - Produces: Windows x64 NSIS 1.2.0 安装包和验收记录。
 
-- [ ] **Step 1: 更新版本**
+- [x] **Step 1: 更新版本**
 
 将 `package.json` 顶层版本、`package-lock.json` 顶层版本和根包版本改为 `1.2.0`。
 
-- [ ] **Step 2: 请求独立代码审查**
+- [x] **Step 2: 请求独立代码审查**
 
 审查设计提交到当前 HEAD 的完整范围，重点检查：DIP 拖动、手势互斥、离线结算、滞回状态、IPC 参数校验、原子存储、动作优先级、SVG 资源完整性和 reduced-motion。修复全部 Critical 和 Important 后重新运行发布门禁。
 
-- [ ] **Step 3: 运行发布门禁**
+- [x] **Step 3: 运行发布门禁**
 
 Run: `npm run verify && npm audit --omit=dev --fetch-timeout=60000 && git diff --check`
 
 Expected: 全部测试与构建通过，生产依赖审计为 0 漏洞。
 
-- [ ] **Step 4: 提交版本**
+- [x] **Step 4: 提交版本**
 
 ```bash
 git add package.json package-lock.json
