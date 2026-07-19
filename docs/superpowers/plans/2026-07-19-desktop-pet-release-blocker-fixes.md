@@ -33,7 +33,7 @@
 - Consumes: `PetLifeSnapshot` 六字段结构和 `PetLifeStore.save(snapshot)`。
 - Produces: `MAX_PET_LIFE_SNAPSHOT_BYTES = 16 * 1024`、`assertPetLifeSnapshotPayload(value: unknown): PetLifeSnapshot`。
 
-- [ ] **Step 1: 添加共享校验失败测试**
+- [x] **Step 1: 添加共享校验失败测试**
 
 创建 `electron/pet-life/validation.test.ts`，覆盖合法快照、额外字段、错误类型、循环对象和超过 16 KiB：
 
@@ -84,13 +84,13 @@ describe('assertPetLifeSnapshotPayload', () => {
 })
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 Run: `npx vitest run electron/pet-life/validation.test.ts`
 
 Expected: FAIL，提示 `./validation` 不存在。
 
-- [ ] **Step 3: 实现无 Node 依赖的共享校验器**
+- [x] **Step 3: 实现无 Node 依赖的共享校验器**
 
 在 `electron/pet-life/validation.ts` 定义唯一字段集合，使用 `TextEncoder().encode(JSON.stringify(value)).byteLength` 计算 UTF-8 大小，并在任何失败路径抛出固定错误：
 
@@ -139,7 +139,7 @@ export function assertPetLifeSnapshotPayload(value: unknown): PetLifeSnapshot {
 
 时间戳的安全整数、非负和未来 24 小时规则继续由 `normalizePetLifeSnapshot` 判断。
 
-- [ ] **Step 4: 在 preload 和 Main 双侧接入校验**
+- [x] **Step 4: 在 preload 和 Main 双侧接入校验**
 
 从 `electron/pet-life/store.ts` 移除重复接口并重新导出共享类型：
 
@@ -170,13 +170,13 @@ petLifeStore.save(snapshot)
 
 `PetLifeStore.save` 的无效输入错误同步为固定保存错误。
 
-- [ ] **Step 5: 运行定向测试和 bundle 验证**
+- [x] **Step 5: 运行定向测试和 bundle 验证**
 
 Run: `npx vitest run electron/pet-life/validation.test.ts electron/pet-life/store.test.ts && npm run typecheck && npm run build:electron && npm run verify:bundle`
 
 Expected: 新增测试、存储测试、类型检查和 preload/Main bundle 边界全部 PASS。
 
-- [ ] **Step 6: 提交 IPC 加固**
+- [x] **Step 6: 提交 IPC 加固**
 
 ```bash
 git add electron/pet-life/validation.ts electron/pet-life/validation.test.ts electron/pet-life/store.ts electron/preload.ts electron/main.ts

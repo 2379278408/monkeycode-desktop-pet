@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { PollerState } from './poller/data-poller'
 import type { PetLifeSnapshot } from './pet-life/store'
+import { assertPetLifeSnapshotPayload } from './pet-life/validation'
 
 function subscribe<T>(channel: string, callback: (data: T) => void): () => void {
   const listener = (_event: Electron.IpcRendererEvent, data: T) => callback(data)
@@ -22,7 +23,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadPetLife: (): Promise<PetLifeSnapshot | null> =>
     ipcRenderer.invoke('pet-life:load'),
   savePetLife: (snapshot: PetLifeSnapshot): Promise<void> =>
-    ipcRenderer.invoke('pet-life:save', snapshot),
+    ipcRenderer.invoke('pet-life:save', assertPetLifeSnapshotPayload(snapshot)),
   beginDrag: (sessionId: string): Promise<void> =>
     ipcRenderer.invoke('window:drag-begin', sessionId),
   moveDrag: (sessionId: string): Promise<void> =>

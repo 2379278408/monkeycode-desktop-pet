@@ -1,17 +1,14 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import {
+  MAX_PET_LIFE_SNAPSHOT_BYTES,
+  assertPetLifeSnapshotPayload,
+  type PetLifeSnapshot,
+} from './validation'
 
-export interface PetLifeSnapshot {
-  mood: number
-  satiety: number
-  energy: number
-  sleeping: boolean
-  lastCalculatedAt: number
-  lastInteractionAt: number
-}
+export type { PetLifeSnapshot } from './validation'
 
 const clampLifeValue = (value: number): number => Math.min(100, Math.max(0, value))
-const MAX_SNAPSHOT_FILE_SIZE = 16 * 1024
 const MAX_FUTURE_OFFSET_MS = 24 * 60 * 60_000
 const LOAD_ERROR_MESSAGE = '桌宠生命状态读取失败'
 
@@ -76,7 +73,7 @@ export class PetLifeStore {
 
   load(): PetLifeSnapshot | null {
     try {
-      if (fs.statSync(this.filePath).size > MAX_SNAPSHOT_FILE_SIZE) {
+      if (fs.statSync(this.filePath).size > MAX_PET_LIFE_SNAPSHOT_BYTES) {
         throwLoadError('FileTooLargeError: 文件过大')
       }
       const normalized = normalizePetLifeSnapshot(
@@ -95,8 +92,9 @@ export class PetLifeStore {
   }
 
   save(snapshot: PetLifeSnapshot): void {
-    const normalized = normalizePetLifeSnapshot(snapshot)
-    if (!normalized) throw new Error('无效桌宠生命状态')
+    const payload = assertPetLifeSnapshotPayload(snapshot)
+    const normalized = normalizePetLifeSnapshot(payload)
+    if (!normalized) throw new Error('桌宠生命状态保存失败')
 
     fs.mkdirSync(path.dirname(this.filePath), { recursive: true })
     const temporaryPath = `${this.filePath}.${process.pid}.tmp`

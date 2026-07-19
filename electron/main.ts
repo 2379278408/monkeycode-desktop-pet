@@ -5,8 +5,9 @@ import { ApiClient } from './api/client'
 import { CaptchaClient } from './auth/captcha-client'
 import { AuthManager } from './auth/manager'
 import { CheckinCoordinator } from './checkin/coordinator'
+import { savePetLifePayload } from './pet-life/ipc'
 import { DataPoller } from './poller/data-poller'
-import { normalizePetLifeSnapshot, PetLifeStore } from './pet-life/store'
+import { PetLifeStore } from './pet-life/store'
 import { TrayManager } from './tray/manager'
 import {
   anchoredBottomCenterBounds,
@@ -256,9 +257,7 @@ function registerIPC(): void {
   ipcMain.handle('pet-life:save', (event, ...args: unknown[]) => {
     assertTrustedSender(event)
     assertArgumentCount(args, 1)
-    const snapshot = normalizePetLifeSnapshot(args[0])
-    if (!snapshot) throw new Error('无效桌宠生命状态')
-    petLifeStore.save(snapshot)
+    savePetLifePayload(petLifeStore, args[0])
   })
 
   ipcMain.handle('auth:check-session', async (event) => {

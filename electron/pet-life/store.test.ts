@@ -233,7 +233,7 @@ describe('PetLifeStore', () => {
   it('rejects an invalid save', () => {
     const { store } = createStore()
     expect(() => store.save({ ...validSnapshot, energy: Number.NaN })).toThrow(
-      '无效桌宠生命状态',
+      '桌宠生命状态保存失败',
     )
   })
 })
